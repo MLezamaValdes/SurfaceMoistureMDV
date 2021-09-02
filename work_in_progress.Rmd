@@ -1,0 +1,53 @@
+---
+title: "Work in progress on Surface Moisture modelling in the MDV"
+author: "Maite"
+date: "2 9 2021"
+
+output: 
+ rmarkdown::html_document:
+  #bookdown::html_document2:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    toc_depth: 6
+link-citations: yes
+toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Work plan
+
+0. find out where to get AWS from the MDV data
+* NZ 
+* LTER
+0. write up some stuff I need to know about MDV surface moisture and its behaviour in this RMD as input to the paper 
+
+
+1. explore soil moisture dataset
+* data cleaning necessary? 
+* understand surface moisture and temperature information distributions
+* spatial configuration of loggers
+2. find a cloud free day as pre-study and get as many useful spatial predictor datasets as possible 
+  * RS
+    * SWIR 
+    * downscaled LST 
+    * radar 
+  * potential predictors: 
+    * DEM
+      * TWI
+      * slope
+    * rock outcrop to use as a mask 
+      * use soil type map to find out where there is only rock and no soil
+    * Pierre's pH 
+    * ask Pierre about salinity and paper progress
+    * 
+3. try modeling relations between surface moisture and elevation, surface moisture and temperature
+
+
+
