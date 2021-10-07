@@ -1,0 +1,673 @@
+---
+title: "iButtons_update"
+author: "Maite Lezama Valdes, Henning Schneidereit"
+date: "01 03 2021 07 04 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 
+```{r, include=F}
+library(sf)
+library(mapview)
+library(stringr)
+library(ggplot2)
+library(gridExtra)
+library(dplyr)
+library(sp)
+library(spacetime)
+```
+
+## Taylor Valley 2013
+```{r}
+locpath <- "C:/Users/Henning Schneidereit/Desktop/SHB AG Fernerkundung/Antarctica/Historic iButton Data/Taylor iButtons"
+loc <- data.table::data.table(read.csv(list.files(locpath, pattern=".txt", full.names = T)))
+
+tayIBut = st_as_sf(loc, coords = c("POINT_X", "POINT_Y"), 
+                 crs = 4326, agr = "constant")
+
+mapview(tayIBut[,1], map.types = c("Esri.WorldImagery"))
+
+
+```
+
+
+Units are Temperature (°C) and %Relative Humidity. According to the first 19 lines in the csv files, the time zone is NZDT. The Registration Number in the info corresponds to "Top iButton Serial Number" in "2011-2012 iButton Status.csv". Rh and T stemming from the same logger ID. 
+
+```{r}
+taylorPath <- "C:/Users/Henning Schneidereit/Desktop/SHB AG Fernerkundung/Antarctica/Historic iButton Data/K020-1314/Taylor"
+
+cm2 <- list.files(taylorPath, pattern="2cm", full.names = T)
+csvfiles <- cm2[grepl(".csv", cm2)]
+
+specIBut <- unique(substring(basename(csvfiles), 4,8))
+
+iButDat <- lapply(seq(specIBut), function(i){
+  specIButpaths <- csvfiles[grepl(specIBut[i], csvfiles)]
+  
+  info <- read.csv(specIButpaths[grepl("T.csv", specIButpaths)], nrows=19)
+  rn <- str_split(info[grepl("Registration Number", info[,1]),], ":")[[1]][2]
+  
+  regn <- substring(rn, nchar(rn)-7, nchar(rn))
+
+  Tmp <- read.csv(specIButpaths[grepl("T.csv", specIButpaths)], skip=19)
+  Rh <- read.csv(specIButpaths[grepl("Rh.csv", specIButpaths)], skip=19)
+  
+  if(any((Tmp$Date.Time == Rh$Date.Time) == FALSE)){
+    stop("Date.Time in Tmp and Rh not matching")
+  }
+  
+  x <- merge(Tmp, Rh, by="Date.Time")
+  x[,c(2,4)] <- NULL
+  names(x) <- c("Date.Time", "T", "Rh")
+  
+  time <- as.POSIXct(x$Date.Time, format="%m/%d/%y %I:%M:%S %p", tz="Pacific/Auckland")
+  x$time <- time
+  
+  x$ID <- substring(basename(specIButpaths[1]), 4, 17)
+  x
+})
+
+
+allIButDat <- do.call("rbind", iButDat)
+
+pRh <- ggplot(allIButDat, aes(x=time, y=Rh, color=ID)) +
+  geom_line() + 
+  xlab("")
+
+pT <- ggplot(allIButDat, aes(x=time, y=T, color=ID)) +
+  geom_line() + 
+  xlab("")
+
+grid.arrange(pRh, pT, nrow = 2)
+
+
+```
+
+### get registration number from info in logger file
+```{r}
+regn <- lapply(seq(specIBut), function(i){
+  specIButpaths <- csvfiles[grepl(specIBut[i], csvfiles)]
+  
+  info <- read.csv(specIButpaths[grepl("Rh.csv", specIButpaths)], nrows=19)
+
+  rn <- str_split(info[grepl("Registration Number", info[,1]),], ":")[[1]][2]
+  
+  substring(rn, nchar(rn)-7, nchar(rn))
+})
+
+regn <- unique(unlist(regn))
+
+```
+
+## Victoria Valley 2012
+```{r}
+idlocs <- readxl::read_excel("C:/Users/Henning Schneidereit/Desktop/SHB AG Fernerkundung/Antarctica/Historic iButton Data/2011-2012 iButton Status.xlsx",
+                             sheet=2)
+idlocs <- data.frame(idlocs)
+
+
+lon <- as.numeric(gsub("[^0-9,-]", "", idlocs$GPS.Coordinate..Long.))/100000
+lat <- (as.numeric(gsub("[^0-9,-]", "", idlocs$GPS.Coordinate..Lat.))/100000)*-1
+
+idlocs$lon <- lon
+idlocs$lag <- lat
+
+head(idlocs)
+
+lonlat <- data.table::data.table(lon, lat, idlocs$Top.iButton.ID)
+lonlat <- lonlat[complete.cases(lonlat),]
+
+IBut = st_as_sf(lonlat, coords = c("lon", "lat"), 
+                 crs = 4326, agr = "constant")
+mapview(IBut[,1],map.types = c("Esri.WorldImagery"))
+
+
+
+
+```
+
+### Victoria Valley timeseries 
+```{r}
+vicPath <- "C:/Users/Henning Schneidereit/Desktop/SHB AG Fernerkundung/Antarctica/Historic iButton Data/K020-1213/Victoria iButtons/"
+
+top <- list.files(vicPath, pattern="Top", full.names = T)
+csvfiles <- top[grepl(".csv", top)]
+
+specIBut <- unique(substring(basename(csvfiles), 4,17))
+specIBut <- specIBut[3:length(specIBut)] # eliminate weird other format there
+
+iButDatVic <- lapply(seq(specIBut), function(i){
+  specIButpaths <- csvfiles[grepl(specIBut[i], csvfiles)]
+  
+  info <- read.csv(specIButpaths[grepl("T.csv", specIButpaths)], nrows=19)
+  rn <- str_split(info[grepl("Registration Number", info[,1]),], ":")[[1]][2]
+  
+  regn <- substring(rn, nchar(rn)-7, nchar(rn))
+
+  Tmp <- read.csv(specIButpaths[grepl("T.csv", specIButpaths)], skip=19)
+  Rh <- read.csv(specIButpaths[grepl("Rh.csv", specIButpaths)], skip=19)
+  
+  if(any((Tmp$Date.Time == Rh$Date.Time) == FALSE)){
+    stop("Date.Time in Tmp and Rh not matching")
+  }
+  
+  x <- merge(Tmp, Rh, by="Date.Time")
+  x[,c(2,4)] <- NULL
+  names(x) <- c("Date.Time", "T", "Rh")
+  
+  time <- as.POSIXct(x$Date.Time, format="%m/%d/%y %I:%M:%S %p", tz="Pacific/Auckland")
+  x$time <- time
+  
+  x$ID <- substring(basename(specIButpaths[1]), 4, 17)
+  x
+})
+
+
+allIButDatVic <- do.call("rbind", iButDatVic)
+
+pRh <- ggplot(allIButDatVic, aes(x=time, y=Rh, color=ID)) +
+  geom_line() + 
+  xlab("")
+
+pT <- ggplot(allIButDatVic, aes(x=time, y=T, color=ID)) +
+  geom_line() + 
+  xlab("")
+
+grid.arrange(pRh, pT, nrow = 2)
+
+```
+
+## to look into next: 
+* iButton Status Jan '11.xls contains more GPS coordinates from Miers, Marshal, Garwood, Hidden & Wright Valley, especially Miers seems to have a lot. 
+* How to connect Taylor Valley time series data to locations in the map? 
+* separate logger locations before plotting for Victoria Valley
+
+# Henning continues work 07.04.2021
+
+### Creating overview to estimate which Valley provides necessary quality of data and to examine where information is missing 
+
+
+```{r}
+overview_iButtons <- idlocs <- readxl::read_excel("C:/Users/Henning Schneidereit/Desktop/SHB AG Fernerkundung/Antarctica/Historic iButton Data/iButton overview.xlsx")
+
+overview_iButtons <- data.frame(overview_iButtons)
+head(overview_iButtons)
+```
+Overview is done by merging all avaible tables about iButton informations ("2011-2012 iButton Status.xlsx", "iButton Status Jan '11.xlxs") and the information i could gather from the Timeseries. Therefore i've chosen one format. As the data before had that many different formats i've merged the information by hand in excel because i could not manage all the different formats in R. For T and Rh: If data should be avaible, it is marked with a "1". If data is not avaible it is marked with a NA. Overview contains no data for temperature and relative humidity, just shows if the data should be avaible. 
+
+## Results of the overview:
+* We already got the data for Season 2010-2011 (Hidden_Valley and Wright_Valley), Season 2011-2012 (McKelvey_Valley and Victoria_Valley) and Season 2012-2013 (Alatna_Valley (here the Coordinates are missing) and Taylor_Valley). 
+* Timeseries should be possible for Seasons 2010-2011,2011-2012,2012-2013.
+* The Coordinates for Alatna_Valley can be acquired? 
+* For the Seasons 2008-2009 and 2009-2010 there should be a lot of data for Miers_Valley, Marshal_Valley and Garwood_Valley. But there mostly temperature was measured. Should we acquire the data?
+* If there are comprehension questions about the overview please let me know and i will try to explain them.
+
+## to look into next: 
+* Can we acquire the coordinates for Alatna_Valley? Done, Charles did sent the data
+* Should we acquire the data for Season 2008-2009 and 2009-2010 if there aren't much information about relative Humidity? We will concentrade on the seasons 2010-2011,2011-2012,2012-2013, 2013-2014
+* How to connect (Taylor Valley) time series data to locations in the map? 
+* separate logger locations before plotting for Victoria Valley
+* Plotting of timeseries for Seasons 2010-2011,2011-2012,2012-2013
+
+## Continuing Work 13.04.2021 and 19.04.2021 Henning Schneidereit 
+* Create overview_dataframe containing just relevant seasons 2010-2011, 2011-2012, 2012-2013
+```{r}
+overview_iButtons <- subset(overview_iButtons, Season=="2010-2011"|Season=="2011-2012"|Season=="2012-2013")
+```
+* Create shapefile with geometries for Julia 
+```{r}
+overview_iButtons$Longitude <- as.numeric(gsub("[^0-9,-]", "", overview_iButtons$Longitude))/1000000
+overview_iButtons$Latitude <- (as.numeric(gsub("[^0-9,-]", "", overview_iButtons$Latitude))/1000000)*-1
+iBut_shape <- st_as_sf(overview_iButtons, coords = c("Longitude", "Latitude"), 
+                 crs = 4326, agr = "constant")
+iBut_shape <- select(iBut_shape, c("Valley","Site_Name","Season","geometry")) #selecting features for Julia's shape, if not enough or others are required, customize here 
+st_write(iBut_shape, "iBut.gpkg", driver="GPKG",overwrite=TRUE)
+```
+* How to connect Taylor Valley time series data to locations? Creating a pattern script for all spatio-temperal datasets
+```{r}
+tayIBut <- subset(overview_iButtons, Valley=="Taylor_Valley")   #create a new tayIBut selection with informations from overview
+tayIBut <- tayIBut[,colSums(is.na(tayIBut)) != nrow(tayIBut)] #delete all columns without informations
+tayIBut <- tayIBut[complete.cases(tayIBut),] #select only data where Rh and T data is avaible 
+
+tayIBut = st_as_sf(tayIBut, coords = c("Longitude", "Latitude"), 
+                 crs = 4326, agr = "constant")
+mapview(tayIBut[,1],map.types = c("Esri.WorldImagery"))
+```
+### create time series, but change a bit about the ID, so that data can be combined over Site_Name
+```{r}
+taylorPath <- "C:/Users/Henning Schneidereit/Desktop/SHB AG Fernerkundung/Antarctica/Historic iButton Data/K020-1314/Taylor"
+
+cm2 <- list.files(taylorPath, pattern="2cm", full.names = T)
+csvfiles <- cm2[grepl(".csv", cm2)]
+
+specIBut <- unique(substring(basename(csvfiles), 1,8))
+
+iButDat <- lapply(seq(specIBut), function(i){
+  specIButpaths <- csvfiles[grepl(specIBut[i], csvfiles)]
+  
+  info <- read.csv(specIButpaths[grepl("T.csv", specIButpaths)], nrows=19)
+  rn <- str_split(info[grepl("Registration Number", info[,1]),], ":")[[1]][2]
+  
+  regn <- substring(rn, nchar(rn)-7, nchar(rn))
+
+  Tmp <- read.csv(specIButpaths[grepl("T.csv", specIButpaths)], skip=19)
+  Rh <- read.csv(specIButpaths[grepl("Rh.csv", specIButpaths)], skip=19)
+  
+  if(any((Tmp$Date.Time == Rh$Date.Time) == FALSE)){
+    stop("Date.Time in Tmp and Rh not matching")
+  }
+  
+  x <- merge(Tmp, Rh, by="Date.Time")
+  x[,c(2,4)] <- NULL
+  names(x) <- c("Date.Time", "T", "Rh")
+  
+  time <- as.POSIXct(x$Date.Time, format="%m/%d/%y %I:%M:%S %p", tz="Pacific/Auckland")
+  x$time <- time
+  
+  x$Site_Name <- substring(basename(specIButpaths[1]), 1, 8)
+  x
+})
+
+
+allIButDat <- do.call("rbind", iButDat)
+
+pRh <- ggplot(allIButDat, aes(x=time, y=Rh, color=Site_Name)) +
+  geom_line() + 
+  xlab("")
+
+pT <- ggplot(allIButDat, aes(x=time, y=T, color=Site_Name)) +
+  geom_line() + 
+  xlab("")
+
+grid.arrange(pRh, pT, nrow = 2)
+
+
+```
+
+### Create a spatial-temporal dataset and save it as shapefile
+```{r}
+subIBut <- select(tayIBut,Site_Name,geometry) #select sitename and geometry from the dataset hence later one can merge the spatial data over sitename with the temporal data
+allIButDat <- select(allIButDat,-Date.Time) #erase the not needed time column
+spatdata <- merge(allIButDat,subIBut, by="Site_Name")
+sfspatdata <- st_as_sf(spatdata, sf_column_name = "geometry", 
+                 crs = 4326, agr = "constant") 
+#st_write(sfspatdata, "Taylor_Valley.shp", driver="ESRI Shapefile")#this doesn't work well as ESRI doesn't keep the exact time --> swap to gpkg
+st_write(sfspatdata, "Taylor_Valley.gpkg", driver="GPKG")
+```
+The spatio-temporal dataset is now avaible as shapefile. The script above can now be used to create spatio-temporal datasets of all relevant seasons 
+
+### Process the other Valley as shown by Taylor Valley
+## Hidden Valley
+```{r}
+hidIBut <- subset(overview_iButtons, Valley=="Hidden_Valley")   
+hidIBut <- hidIBut[,colSums(is.na(hidIBut)) != nrow(hidIBut)] #delete all columns without informations
+hidIBut <- hidIBut[complete.cases(hidIBut),] #select only data where Rh and T data is avaible 
+
+hidIBut = st_as_sf(hidIBut, coords = c("Longitude", "Latitude"), 
+                 crs = 4326, agr = "constant")
+mapview(hidIBut[,1],map.types = c("Esri.WorldImagery"))
+```
+
+```{r}
+hiddenPath <- "C:/Users/Henning Schneidereit/Desktop/SHB AG Fernerkundung/Antarctica/Historic iButton Data/K020-1112/Hidden Valley iButtons"
+
+cm2 <- list.files(hiddenPath, full.names = T)
+csvfiles <- cm2[grepl(".csv", cm2)]
+#specIBut <- unique(substring(basename(csvfiles), 1,8))
+#This method of searching for the sites with both data (RH and T) avaible leads to an error in the following function, as this list contains all sites, the ones with Rh and T and the ones with T, because not all time series are labeled the same. My idea is to geht the sitenames from the "i"IBut as it contains only the sites where both datasets are avaible.
+
+specIBut <- as.character(hidIBut$Site_Name)
+
+iButDat <- lapply(seq(specIBut), function(i){
+  specIButpaths <- csvfiles[grepl(specIBut[i], csvfiles)]
+  
+  info <- read.csv(specIButpaths[grepl("T.csv", specIButpaths)], nrows=19)
+  rn <- str_split(info[grepl("Registration Number", info[,1]),], ":")[[1]][2]
+  
+  regn <- substring(rn, nchar(rn)-7, nchar(rn))
+
+  Tmp <- read.csv(specIButpaths[grepl("T.csv", specIButpaths)], skip=19)
+  Rh <- read.csv(specIButpaths[grepl("Rh.csv", specIButpaths)], skip=19)
+  
+  if(any((Tmp$Date.Time == Rh$Date.Time) == FALSE)){
+    stop("Date.Time in Tmp and Rh not matching")
+  }
+  
+  x <- merge(Tmp, Rh, by="Date.Time")
+  x[,c(2,4)] <- NULL
+  names(x) <- c("Date.Time", "T", "Rh")
+  
+ # time <- as.POSIXct(x$Date.Time, format="%m/%d/%y %I:%M:%S %p", tz="Pacific/Auckland")
+ # x$time <- time  #this part of the function does not work for Hidden Valley as the date format divers from the one in Taylor valley... love it ^-^
+  time <- as.POSIXct(x$Date.Time, format="%d/%m/%y %I:%M:%S %p", tz="Pacific/Auckland")
+  x$time <- time
+  
+  #x$Site_Name <- substring(basename(specIButpaths[1]), 1, 8)#The Site-Name is nine figures long 
+  x$Site_Name <- substring(basename(specIButpaths[1]), 1, 9)
+  x
+})
+
+
+allIButDat <- do.call("rbind", iButDat)
+
+pRh <- ggplot(allIButDat, aes(x=time, y=Rh, color=Site_Name)) +
+  geom_line() + 
+  xlab("")
+
+pT <- ggplot(allIButDat, aes(x=time, y=T, color=Site_Name)) +
+  geom_line() + 
+  xlab("")
+
+grid.arrange(pRh, pT, nrow = 2)
+
+
+```
+
+```{r}
+subIBut <- select(hidIBut,Site_Name,geometry) #select sitename and geometry from the dataset hence later one can merge the spatial data over sitename with the temporal data
+allIButDat <- select(allIButDat,-Date.Time) #erase the not needed time column
+spatdata <- merge(allIButDat,subIBut, by="Site_Name")
+sfspatdata <- st_as_sf(spatdata, sf_column_name = "geometry", 
+                 crs = 4326, agr = "constant") 
+st_write(sfspatdata, "Hidden_Valley.gpkg", driver="GPKG")
+```
+
+## Wright Valley
+```{r}
+wriIBut <- subset(overview_iButtons, Valley=="Wright_Valley") 
+wriIBut <- wriIBut[,colSums(is.na(wriIBut)) != nrow(wriIBut)] #delete all columns without informations
+wriIBut <- wriIBut[complete.cases(wriIBut),] #select only data where Rh and T data is avaible 
+wriIBut <- select(wriIBut,-T_10cm) #manual deleting T_10cm hence every site of wright valley was masured as well in 10cm depth
+wriIBut = st_as_sf(wriIBut, coords = c("Longitude", "Latitude"), 
+                 crs = 4326, agr = "constant")
+mapview(wriIBut[,1],map.types = c("Esri.WorldImagery"))
+```
+
+```{r}
+wrightPath <- "C:/Users/Henning Schneidereit/Desktop/SHB AG Fernerkundung/Antarctica/Historic iButton Data/K020-1112/Wright Valley iButtons"
+
+cm0 <- list.files(wrightPath, full.names = T)
+csvfiles <- cm0[grepl(".csv", cm0)]
+#specIBut <- unique(substring(basename(csvfiles), 1,8))
+#This method of searching for the sites with both data (RH and T) avaible leads to an error in the following function, as this list contains all sites, the ones with Rh and T and the ones with T, because not all time series are labeled the same. My idea is to geht the sitenames from the "i"IBut as it contains only the sites where both datasets are avaible.
+
+specIBut <- as.character(wriIBut$Site_Name)
+
+iButDat <- lapply(seq(specIBut), function(i){
+  specIButpaths <- csvfiles[grepl(specIBut[i], csvfiles)]
+  
+  info <- read.csv(specIButpaths[grepl("T.csv", specIButpaths)], nrows=19)
+  rn <- str_split(info[grepl("Registration Number", info[,1]),], ":")[[1]][2]
+  
+  regn <- substring(rn, nchar(rn)-7, nchar(rn))
+
+  Tmp <- read.csv(specIButpaths[grepl("T.csv", specIButpaths)], skip=19)
+  Rh <- read.csv(specIButpaths[grepl("Rh.csv", specIButpaths)], skip=19)
+  
+  if(any((Tmp$Date.Time == Rh$Date.Time) == FALSE)){
+    stop("Date.Time in Tmp and Rh not matching")
+  }
+  
+  x <- merge(Tmp, Rh, by="Date.Time")
+  x[,c(2,4)] <- NULL
+  names(x) <- c("Date.Time", "T", "Rh")
+  
+ # time <- as.POSIXct(x$Date.Time, format="%m/%d/%y %I:%M:%S %p", tz="Pacific/Auckland") #changing time format 
+ 
+    time <- as.POSIXct(x$Date.Time, format="%d/%m/%y %I:%M:%S %p", tz="Pacific/Auckland")
+  x$time <- time
+  
+  #x$Site_Name <- substring(basename(specIButpaths[1]), 1, 8)#The Site-Name differs in length, so the substring has to be made until the underdash 
+  x$Site_Name <- sub("_.*", "", basename(specIButpaths[1]))
+  x
+})
+
+
+allIButDat <- do.call("rbind", iButDat)
+
+pRh <- ggplot(allIButDat, aes(x=time, y=Rh, color=Site_Name)) +
+  geom_line() + 
+  xlab("")
+
+pT <- ggplot(allIButDat, aes(x=time, y=T, color=Site_Name)) +
+  geom_line() + 
+  xlab("")
+
+grid.arrange(pRh, pT, nrow = 2)
+
+
+```
+
+```{r}
+subIBut <- select(wriIBut,Site_Name,geometry) #select sitename and geometry from the dataset hence later one can merge the spatial data over sitename with the temporal data
+allIButDat <- select(allIButDat,-Date.Time) #erase the not needed time column
+spatdata <- merge(allIButDat,subIBut, by="Site_Name")
+sfspatdata <- st_as_sf(spatdata, sf_column_name = "geometry", 
+                 crs = 4326, agr = "constant") 
+st_write(sfspatdata, "Wright_Valley.gpkg", driver="GPKG")
+```
+## McKelvey_Valley
+```{r}
+mckIBut <- subset(overview_iButtons, Valley=="McKelvey_Valley") 
+mckIBut <- mckIBut[,colSums(is.na(mckIBut)) != nrow(mckIBut)] #delete all columns without informations
+mckIBut <- mckIBut[complete.cases(mckIBut),] #select only data where Rh and T data is avaible 
+mckIBut <- select(mckIBut,-T_10cm) #manual deleting T_10cm hence every site of McKelvey valley was masured as well in 10cm depth
+mckIBut = st_as_sf(mckIBut, coords = c("Longitude", "Latitude"), 
+                 crs = 4326, agr = "constant")
+mapview(mckIBut[,1],map.types = c("Esri.WorldImagery"))
+```
+
+```{r}
+mckelveyPath <- "C:/Users/Henning Schneidereit/Desktop/SHB AG Fernerkundung/Antarctica/Historic iButton Data/K020-1213/McKelvey iButtons"
+
+cm2 <- list.files(mckelveyPath, full.names = T)
+csvfiles <- cm2[grepl(".csv", cm2)]
+#specIBut <- unique(substring(basename(csvfiles), 1,8))
+#This method of searching for the sites with both data (RH and T) avaible leads to an error in the following function, as this list contains all sites, the ones with Rh and T and the ones with T, because not all time series are labeled the same. My idea is to geht the sitenames from the "i"IBut as it contains only the sites where both datasets are avaible.
+
+specIBut <- as.character(mckIBut$Site_Name)
+
+iButDat <- lapply(seq(specIBut), function(i){
+  specIButpaths <- csvfiles[grepl(specIBut[i], csvfiles)]
+  
+  info <- read.csv(specIButpaths[grepl("T.csv", specIButpaths)], nrows=19)
+  rn <- str_split(info[grepl("Registration Number", info[,1]),], ":")[[1]][2]
+  
+  regn <- substring(rn, nchar(rn)-7, nchar(rn))
+
+  Tmp <- read.csv(specIButpaths[grepl("T.csv", specIButpaths)], skip=19)
+  Rh <- read.csv(specIButpaths[grepl("Rh.csv", specIButpaths)], skip=19)
+  
+  if(any((Tmp$Date.Time == Rh$Date.Time) == FALSE)){
+    stop("Date.Time in Tmp and Rh not matching")
+  }
+  
+  x <- merge(Tmp, Rh, by="Date.Time")
+  x[,c(2,4)] <- NULL
+  names(x) <- c("Date.Time", "T", "Rh")
+  
+  time <- as.POSIXct(x$Date.Time, format="%m/%d/%y %I:%M:%S %p", tz="Pacific/Auckland") 
+ 
+  x$time <- time
+  
+  #x$Site_Name <- substring(basename(specIButpaths[1]), 1, 8)#The Site-Name differs in length, so the substring has to be made until the second underdash 
+  x$Site_Name <- sub("^([^_]*_[^_]*)_.*$", "\\1", basename(specIButpaths[1]))
+  x
+})
+
+
+allIButDat <- do.call("rbind", iButDat)
+
+pRh <- ggplot(allIButDat, aes(x=time, y=Rh, color=Site_Name)) +
+  geom_line() + 
+  xlab("")
+
+pT <- ggplot(allIButDat, aes(x=time, y=T, color=Site_Name)) +
+  geom_line() + 
+  xlab("")
+
+grid.arrange(pRh, pT, nrow = 2)
+
+
+```
+
+```{r}
+subIBut <- select(mckIBut,Site_Name,geometry) #select sitename and geometry from the dataset hence later one can merge the spatial data over sitename with the temporal data
+allIButDat <- select(allIButDat,-Date.Time) #erase the not needed time column
+spatdata <- merge(allIButDat,subIBut, by="Site_Name")
+sfspatdata <- st_as_sf(spatdata, sf_column_name = "geometry", 
+                 crs = 4326, agr = "constant") 
+st_write(sfspatdata, "McKelvey_Valley.gpkg", driver="GPKG")
+```
+## Victoria Valley
+```{r}
+vicIBut <- subset(overview_iButtons, Valley=="Victoria_Valley") 
+vicIBut <- vicIBut[,colSums(is.na(vicIBut)) != nrow(vicIBut)] #delete all columns without informations
+vicIBut <- vicIBut[complete.cases(vicIBut),] #select only data where Rh and T data is avaible 
+vicIBut <- select(vicIBut,-T_10cm) #manual deleting T_10cm hence every site of Victoria valley was masured as well in 10cm depth and the information is not required
+vicIBut = st_as_sf(vicIBut, coords = c("Longitude", "Latitude"), 
+                 crs = 4326, agr = "constant")
+mapview(vicIBut[,1],map.types = c("Esri.WorldImagery"))
+```
+
+```{r}
+victoriaPath <- "C:/Users/Henning Schneidereit/Desktop/SHB AG Fernerkundung/Antarctica/Historic iButton Data/K020-1213/Victoria iButtons"
+
+cm2 <- list.files(victoriaPath, full.names = T)
+csvfiles <- cm2[grepl(".csv", cm2)]
+#specIBut <- unique(substring(basename(csvfiles), 1,8))
+#This method of searching for the sites with both data (RH and T) avaible leads to an error in the following function, as this list contains all sites, the ones with Rh and T and the ones with T, because not all time series are labeled the same. My idea is to geht the sitenames from the "i"IBut as it contains only the sites where both datasets are avaible.
+
+specIBut <- as.character(vicIBut$Site_Name)
+
+iButDat <- lapply(seq(specIBut), function(i){
+  specIButpaths <- csvfiles[grepl(specIBut[i], csvfiles)]
+  
+  info <- read.csv(specIButpaths[grepl("T.csv", specIButpaths)], nrows=19)
+  rn <- str_split(info[grepl("Registration Number", info[,1]),], ":")[[1]][2]
+  
+  regn <- substring(rn, nchar(rn)-7, nchar(rn))
+
+  Tmp <- read.csv(specIButpaths[grepl("T.csv", specIButpaths)], skip=19)
+  Rh <- read.csv(specIButpaths[grepl("Rh.csv", specIButpaths)], skip=19)
+  
+  if(any((Tmp$Date.Time == Rh$Date.Time) == FALSE)){
+    stop("Date.Time in Tmp and Rh not matching")
+  }
+  
+  x <- merge(Tmp, Rh, by="Date.Time")
+  x[,c(2,4)] <- NULL
+  names(x) <- c("Date.Time", "T", "Rh")
+  
+  time <- as.POSIXct(x$Date.Time, format="%m/%d/%y %I:%M:%S %p", tz="Pacific/Auckland") 
+ 
+  x$time <- time
+  
+  #x$Site_Name <- substring(basename(specIButpaths[1]), 1, 8)#The Site-Name differs in length, so the substring has to be made until the second underdash 
+  x$Site_Name <- sub("^([^_]*_[^_]*)_.*$", "\\1", basename(specIButpaths[1]))
+  x
+})
+
+
+allIButDat <- do.call("rbind", iButDat)
+
+pRh <- ggplot(allIButDat, aes(x=time, y=Rh, color=Site_Name)) +
+  geom_line() + 
+  xlab("")
+
+pT <- ggplot(allIButDat, aes(x=time, y=T, color=Site_Name)) +
+  geom_line() + 
+  xlab("")
+
+grid.arrange(pRh, pT, nrow = 2)
+
+
+```
+
+```{r}
+subIBut <- select(vicIBut,Site_Name,geometry) #select sitename and geometry from the dataset hence later one can merge the spatial data over sitename with the temporal data
+allIButDat <- select(allIButDat,-Date.Time) #erase the not needed time column
+spatdata <- merge(allIButDat,subIBut, by="Site_Name")
+sfspatdata <- st_as_sf(spatdata, sf_column_name = "geometry", 
+                 crs = 4326, agr = "constant") 
+st_write(sfspatdata, "Victoria_Valley.gpkg", driver="GPKG")
+```
+## Alatna Valley
+```{r}
+alaIBut <- subset(overview_iButtons, Valley=="Alatna_Valley") 
+alaIBut <- alaIBut[,colSums(is.na(alaIBut)) != nrow(alaIBut)] #delete all columns without informations
+alaIBut <- alaIBut[complete.cases(alaIBut),] #select only data where Rh and T data is avaible 
+alaIBut <- select(alaIBut,-T_10cm) #manual deleting T_10cm hence every site of Victoria valley was masured as well in 10cm depth and the information is not required
+alaIBut = st_as_sf(alaIBut, coords = c("Longitude", "Latitude"), 
+                 crs = 4326, agr = "constant")
+mapview(alaIBut[,1],map.types = c("Esri.WorldImagery"))
+```
+
+```{r}
+alatnaPath <- "C:/Users/Henning Schneidereit/Desktop/SHB AG Fernerkundung/Antarctica/Historic iButton Data/K020-1314/Alatna"
+
+cm2 <- list.files(alatnaPath, full.names = T)
+csvfiles <- cm2[grepl(".csv", cm2)]
+#specIBut <- unique(substring(basename(csvfiles), 1,8))
+#This method of searching for the sites with both data (RH and T) avaible leads to an error in the following function, as this list contains all sites, the ones with Rh and T and the ones with T, because not all time series are labeled the same. My idea is to geht the sitenames from the "i"IBut as it contains only the sites where both datasets are avaible.
+
+specIBut <- as.character(alaIBut$Site_Name)
+
+iButDat <- lapply(seq(specIBut), function(i){
+  specIButpaths <- csvfiles[grepl(specIBut[i], csvfiles)]
+  
+  info <- read.csv(specIButpaths[grepl("T.csv", specIButpaths)], nrows=19)
+  rn <- str_split(info[grepl("Registration Number", info[,1]),], ":")[[1]][2]
+  
+  regn <- substring(rn, nchar(rn)-7, nchar(rn))
+
+  Tmp <- read.csv(specIButpaths[grepl("T.csv", specIButpaths)], skip=19)
+  Rh <- read.csv(specIButpaths[grepl("Rh.csv", specIButpaths)], skip=19)
+  
+  if(any((Tmp$Date.Time == Rh$Date.Time) == FALSE)){
+    stop("Date.Time in Tmp and Rh not matching")
+  }
+  
+  x <- merge(Tmp, Rh, by="Date.Time")
+  x[,c(2,4)] <- NULL
+  names(x) <- c("Date.Time", "T", "Rh")
+  
+  time <- as.POSIXct(x$Date.Time, format="%m/%d/%y %I:%M:%S %p", tz="Pacific/Auckland") 
+ 
+  x$time <- time
+  
+  #x$Site_Name <- substring(basename(specIButpaths[1]), 1, 8)#The Site-Name differs in length, so the substring has to be made until the underdash 
+  x$Site_Name <- sub("_.*", "", basename(specIButpaths[1]))
+  x
+})
+
+
+allIButDat <- do.call("rbind", iButDat)
+
+pRh <- ggplot(allIButDat, aes(x=time, y=Rh, color=Site_Name)) +
+  geom_line() + 
+  xlab("")
+
+pT <- ggplot(allIButDat, aes(x=time, y=T, color=Site_Name)) +
+  geom_line() + 
+  xlab("")
+
+grid.arrange(pRh, pT, nrow = 2)
+
+
+```
+
+```{r}
+subIBut <- select(alaIBut,Site_Name,geometry) #select sitename and geometry from the dataset hence later one can merge the spatial data over sitename with the temporal data
+allIButDat <- select(allIButDat,-Date.Time) #erase the not needed time column
+spatdata <- merge(allIButDat,subIBut, by="Site_Name")
+sfspatdata <- st_as_sf(spatdata, sf_column_name = "geometry", 
+                 crs = 4326, agr = "constant") 
+st_write(sfspatdata, "Alatna_Valley.gpkg", driver="GPKG")
+```
+## Results
+The spatio-temporal datasets are now avaible for the Seasons 2010-2011, 2011-2012 and 2012-2013. The datasets contain Information about time, Rh and T (both in 0cm (Wright Valley) or 2cm depth (all the other Valley, except Hidden Valley where no depth data is avaible)), geometry and Site_Name. If there are other information needed, e.g. 10cm_depth temperature, they can be added by changing the skript above. The datasets are exported as GPKG. 

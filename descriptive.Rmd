@@ -1,0 +1,261 @@
+---
+title: "Calibration and validation data for surface moisture in the McMurdo Dry Valleys"
+author: "Maite"
+date: "13 9 2021"
+
+output: 
+ rmarkdown::html_document:
+  #bookdown::html_document2:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    toc_depth: 6
+link-citations: yes
+toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = F, warning=F, echo = F)
+```
+
+
+```{r}
+library(sf)
+library(mapview)
+library(ggplot2)
+library(gridExtra)
+library(grid)
+library(colorspace)
+library(here)
+library(dplyr)
+library(lubridate)
+```
+
+This skript shows calibration and validation data for surface moisture modelling in the McMurdo Dry Valleys in a descriptive way. 
+
+Read in iButton data for the different valleys. 
+
+```{r, message=F, results='hide'}
+iButDir <- paste0(here("data/calib_valid/iButtons/"))
+
+gpkdir <- paste0(iButDir, "/gpkg/")
+f <- list.files(gpkdir,full.names=T)
+
+iB_valley <- lapply(seq(f),function(i){
+  st_read(f[[i]])
+})
+
+
+```
+
+<!-- Get DEM to write elevation into the location data  -->
+<!-- ```{r} -->
+<!-- predDir <- here("data/predictors/") -->
+<!-- pred <- readRDS(list.files(predDir, pattern="full", full.names=T)) -->
+
+<!-- pred <- pred[[c("dem", "slope", "aspect", -->
+<!--        "soilraster", "landcoverres")]] -->
+<!-- predcrs <- readRDS(list.files(predDir, pattern="predcrs", full.names=T)) -->
+<!-- dem <- raster::raster(list.files(predDir,                                pattern="DEM_8m_MDV_clean_aoi_filled_filtered_new.tif", full.names=T)) -->
+<!-- ``` -->
+
+Project iButton data to EPSG 3031
+```{r}
+predDir <- here("data/predictors/") 
+predcrs <- readRDS(list.files(predDir, pattern="predcrs", full.names=T)) 
+iB_valley <- lapply(seq(iB_valley), function(i){
+  x <- st_transform(iB_valley[[i]], crs = predcrs)
+  x$Site_Name <- factor(x$Site_Name)
+  x
+})
+names(iB_valley) <- tools::file_path_sans_ext(basename(f))
+```
+
+
+<!-- ```{r} -->
+<!-- # How many locations per valley?  -->
+<!-- loc_p_v <- sapply(seq(iB_valley), function(i){ -->
+<!--   length(unique(iB_valley[[i]]$geom)) -->
+<!-- }) -->
+<!-- # max = 22 for each unique valley -->
+<!-- data.frame("valley"=names(iB_valley), "n_locations"=loc_p_v) -->
+
+<!-- # get locations of unqiue Site_Names -->
+<!-- unique_locations <- st_difference(iB_valley$iBut) -->
+
+<!-- pred_loc <- raster::extract(pred, unique_locations) -->
+
+<!-- unique_locations <- cbind(unique_locations, pred_loc) -->
+
+<!-- ``` -->
+
+
+
+<!-- ## Display locations  -->
+<!-- ```{r, message=F} -->
+<!-- # i=1 -->
+<!-- # cat("unique sensor locations: ", length(unique(iB_valley[[i]]$geom))) -->
+<!-- # l <- length(unique(iB_valley[[i]]$geom)) -->
+<!-- # unique(iB_valley[[i]]$Site_Name) -->
+
+<!-- valleys <- unique(unique_locations$Valley) -->
+
+<!-- plots <- lapply(seq(valleys), function(v){ -->
+<!--   # cat(valleys[v], ":") -->
+<!--   iBut_Vlly <- unique_locations[unique_locations$Valley==valleys[v],] -->
+<!--   ex <- st_buffer(st_as_sfc(st_bbox(iBut_Vlly)),dist=200) -->
+<!--   DEM_Vlly <- raster::crop(dem,y=st_bbox(ex)) -->
+<!--   mapview(DEM_Vlly,na.color="#00000000", -->
+<!--           map.types = "Esri.WorldImagery")+mapview(iBut_Vlly,  -->
+<!--                                                    label="Site_Name",zcol="dem")  -->
+<!-- }) -->
+<!-- ``` -->
+
+Use only data, where temperature is higher than -1°C
+```{r}
+
+onlySummer <- TRUE 
+
+iButPlots <- lapply(seq(valleys), function(v){
+  iBut_Vlly <- iB_valley[[which(names(iB_valley)==valleys[v])]]
+  iBut_Vlly <- iBut_Vlly[order(iBut_Vlly$time),]
+  # cut into two to not get the gap in the middle where temperatures are too low
+  timeslot1 <- iBut_Vlly[order(iBut_Vlly$time) < (max(order(iBut_Vlly$time))/2),] 
+  timeslot2 <- iBut_Vlly[order(iBut_Vlly$time) > (max(order(iBut_Vlly$time))/2),] 
+  
+  iBut_Vlly <- list(timeslot1, timeslot2)
+  
+  fp <- lapply(seq(iBut_Vlly), function(i){
+    
+      if(onlySummer == TRUE){
+        iBut_Vlly[[i]] <- iBut_Vlly[[i]][month(iBut_Vlly[[i]]$time) %in% c(11,12,1,2),] 
+      }
+      
+      iBut_Vlly[[i]]$Rh[iBut_Vlly[[i]]$T < -1] <- NA
+    
+      pRh <- ggplot(iBut_Vlly[[i]], aes(x=time, y=Rh, color=Site_Name)) +
+            scale_colour_viridis_d()+
+            geom_line() +
+            xlab("")
+    
+    
+      pT <- ggplot(iBut_Vlly[[i]], aes(x=time, y=T, color=Site_Name)) +
+            scale_colour_viridis_d()+
+            geom_line() +
+            geom_hline(yintercept = -1, linetype = "dotted")+
+            xlab("")
+      
+      fp <- arrangeGrob(pRh, pT, nrow = 2)
+  })
+  return(fp)  
+
+})
+
+```
+
+
+To see the iButton logger location names, hold cursor over point.
+
+### Hidden_Valley
+```{r}
+# plots[[1]]
+grid.draw(iButPlots[[1]][[1]])
+grid.draw(iButPlots[[1]][[2]])
+
+```
+
+
+### Wright_Valley  
+```{r}
+# plots[[2]]
+grid.draw(iButPlots[[2]][[1]])
+grid.draw(iButPlots[[2]][[2]])
+
+```
+
+### McKelvey_Valley
+```{r}
+# plots[[3]]
+grid.draw(iButPlots[[3]][[1]])
+grid.draw(iButPlots[[3]][[2]])
+
+```
+
+### Victoria_Valley
+```{r}
+# plots[[4]]
+grid.draw(iButPlots[[4]][[1]])
+grid.draw(iButPlots[[4]][[2]])
+
+```
+
+### Alatna_Valley  
+```{r}
+# plots[[5]]
+grid.draw(iButPlots[[5]][[1]])
+grid.draw(iButPlots[[5]][[2]])
+
+```
+
+### Taylor_Valley
+```{r}
+# plots[[6]]
+grid.draw(iButPlots[[6]][[1]])
+grid.draw(iButPlots[[6]][[2]])
+
+```
+
+TV-S-500 seems to be below a snow patch in a shady corner and is fully saturated. 
+
+
+## Automatic Weather Station Data
+### Lake Fryxell Met Station
+Dataset can be downloaded here: [Lake Fryxell](https://mcm.lternet.edu/content/high-frequency-measurements-lake-fryxell-meteorological-station-frlm-mcmurdo-dry-valleys)
+
+
+```{r}
+awsDir <- here("data/calib_valid/AWS/")
+lf_rh <- list.files(awsDir, full.names=T, pattern="frlm_rh")
+lf_st <- list.files(awsDir, full.names=T, pattern="frlm_soilt")
+
+f_rh <- read.csv(lf_rh)
+head(f_rh, n=3)
+# str(f_rh)
+# unique(f_rh$RH_COMMENTS)
+f_rh$datetime <- as.POSIXct(f_rh$DATE_TIME, format="%d/%m/%Y %H:%M")
+
+f_st <- read.csv(lf_st)
+head(f_st, n=3)
+# str(f_st)
+# unique(f_st$SOILT_COMMENTS)
+f_st$datetime <- as.POSIXct(f_st$DATE_TIME, format="%d/%m/%Y %H:%M")
+# unique(year(f_st$datetime))
+```
+
+Years that are covered in this dataset are: 
+```{r}
+hist(year(f_rh$datetime), main="RH Observations per year", 
+     xlab="Year", ylab="n observations")
+hist(year(f_st$datetime), main="Soil Temperature Observations per year", 
+     xlab="Year", ylab="n observations")
+```
+
+
+Let's for now take a look at the year 2019 and focus on Relative Humidity and the soil temperature at surface level. 
+```{r}
+f_rh19 <- f_rh[year(f_rh$datetime)==2019,]
+f_st19 <- f_st[year(f_st$datetime)==2019,]
+
+prh <- ggplot(f_rh19, aes(datetime, RH))+
+  geom_line()+
+  ggtitle("Relative Humidity")
+pst <- ggplot(f_st19, aes(datetime, SOILT0CM))+
+  geom_line()+
+  ggtitle("Soil temperature at surface level")
+
+gridExtra::grid.arrange(prh,pst)
+```
+

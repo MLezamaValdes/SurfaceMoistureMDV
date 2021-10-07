@@ -19,35 +19,108 @@ toc: yes
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+# Colors: DarkMagenta, DarkCyan, DarkBlue, Teal, YellowGreen
 ```
 
-## Work plan
+# Work plan
 
-0. find out where to get AWS from the MDV data
-* NZ 
-* LTER
 0. write up some stuff I need to know about MDV surface moisture and its behaviour in this RMD as input to the paper 
 
 
-1. explore soil moisture dataset
-* data cleaning necessary? 
-* understand surface moisture and temperature information distributions
-* spatial configuration of loggers
-2. find a cloud free day as pre-study and get as many useful spatial predictor datasets as possible 
-  * RS
+1. **explore soil moisture dataset**
+      * data cleaning necessary? 
+      * understand surface moisture and temperature information distributions, determine cut-off value (0°C? -x°C?) 
+      * spatial configuration of loggers, i.e. think about validation strategy (how to do the spatial CV)
+2. data gathering for **pre-study**: find a cloud free day and get as many useful spatial predictor datasets as possible 
+3. **describe and understand relations between surface moisture and predictors** & temperature
+      * surface moisture and elevation
+      * surface moisture and temperature 
+4. build **model for case study**
+4. **run workflow for the whole temporal and spatial setting** 
+
+# To do's: 
+* ask Pierre about salinity and pH-paper progress
+
+# Paper relevant info
+
+## Introduction
+
+### Research Question:
+
+* For Method 1 and 2:  <font size="4"> <span style="color:YellowGreen">**How accuarate can surface moisture be modeled for the open soil areas within the Antarctic Dry Valleys? **</span> </font> 
+
+
+* actually interesting question:  <font size="4"> <span style="color:YellowGreen">**Which factors does the spatio-temporal surface moisture configuration in the MDV depend upon?**</span> </font>  
+
+### What we know about surface moisture in the MDV
+
+* very low overall
+* longer wavelenghts can pick it up 
+* short duration of hydrological events
+* ...
+
+## Questions
+
+* should I only use values above 0 degrees? Find out when water freezes in the 
+MDV and how the relation to salinity would be
+
+## Data 
+
+### Calibration and validation 
+![AWS and iButton spatial distribution](map_stations_s.png){width=300}
+
+#### Already available: 
+* iButton data
+
+#### To download: 
+* AWS 
+[quality controlled and official data](https://mcm.lternet.edu/meteorology-data-sets) (until 2019 or 2020)
+[non quality controlled but full record until now](https://mcm.lternet.edu/meteorology-real-time-data)  
+
+[Example: Explorer's Cove](https://mcm.lternet.edu/content/high-frequency-measurements-explorers-cove-meteorological-station-exem-mcmurdo-dry-valleys)
+
+There is:
+
+* Air Temperature
+* **Precipitation**
+* Solar Radiation
+* **Relative Humidity** (that's what iButtons measure)
+* **Soil Moisture**
+* **Soil Temperature** 
+* Wind Direction and Speed
+
+
+### Potential spatial predictors
+![Potential spatial predictors](spatial_predictors.png){width=300}
+
+#### Already available: 
+* DEM 8 / 30m
+        * TWI
+        * slope
+* rock outcrop to use as a mask 
+  * use soil type map to find out where there is only rock and no soil
+* LST 30m 
+* soil types
+* pH model (Pierre: "pH is very much correlated to soil moisture, and more linear 
+than EC (because it's already a log scale!), but I could also share EC estimates if need be.") 
+
+      
+      
+#### To acquire
+* RS data: 
     * SWIR 
     * downscaled LST 
-    * radar 
-  * potential predictors: 
-    * DEM
-      * TWI
-      * slope
-    * rock outcrop to use as a mask 
-      * use soil type map to find out where there is only rock and no soil
-    * Pierre's pH 
-    * ask Pierre about salinity and paper progress
-    * 
-3. try modeling relations between surface moisture and elevation, surface moisture and temperature
+    * radar
+* EC (Pierre)?
+
+## Methods
+
+![Method schematic overview](Method.png)
+
+
+## Discussion
+
 
 
 

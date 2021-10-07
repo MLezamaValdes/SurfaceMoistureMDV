@@ -1,0 +1,12 @@
+install.packages("sf")
+install.packages("mapview")
+install.packages("ggplot2")
+install.packages("gridExtra")
+install.packages("grid")
+install.packages("colorspace")
+install.packages("here")
+install.packages("dplyr")
+install.packages("lubridate")
+install.packages("knitr")
+install.packages("rmarkdown")
+
