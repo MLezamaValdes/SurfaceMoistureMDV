@@ -4,6 +4,9 @@
 # Surface Moisture for the Antarctic McMurdo Dry Valleys
 
 <!-- badges: start -->
+
+.. image:: <https://mybinder.org/badge_logo.svg> :target:
+<https://mybinder.org/v2/gh/MLezamaValdes/SurfaceMoistureMDV/HEAD>
 <!-- badges: end -->
 
 This repository documents the worflow to produce high spatiotemporal
