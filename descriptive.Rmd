@@ -36,6 +36,8 @@ library(lubridate)
 
 This skript shows calibration and validation data for surface moisture modelling in the McMurdo Dry Valleys in a descriptive way. 
 
+# iButton data
+
 Read in iButton data for the different valleys. 
 
 ```{r, message=F, results='hide'}
@@ -118,6 +120,9 @@ Use only data, where temperature is higher than -1°C
 ```{r}
 
 onlySummer <- TRUE 
+
+unique_locations <- st_difference(iB_valley$iBut)
+valleys <- unique(unique_locations$Valley) 
 
 iButPlots <- lapply(seq(valleys), function(v){
   iBut_Vlly <- iB_valley[[which(names(iB_valley)==valleys[v])]]
@@ -211,7 +216,7 @@ grid.draw(iButPlots[[6]][[2]])
 TV-S-500 seems to be below a snow patch in a shady corner and is fully saturated. 
 
 
-## Automatic Weather Station Data
+# Automatic Weather Station Data
 ### Lake Fryxell Met Station
 Dataset can be downloaded here: [Lake Fryxell](https://mcm.lternet.edu/content/high-frequency-measurements-lake-fryxell-meteorological-station-frlm-mcmurdo-dry-valleys)
 
