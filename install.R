@@ -1,3 +1,6 @@
+install.packages("udunits2",dependencies=T)
+install.packages("units",dependencies=T)
+
 install.packages("sf",dependencies=T)
 install.packages("mapview",dependencies=T)
 install.packages("ggplot2",dependencies=T)
@@ -9,3 +12,4 @@ install.packages("dplyr",dependencies=T)
 install.packages("lubridate",dependencies=T)
 install.packages("knitr",dependencies=T)
 install.packages("rmarkdown",dependencies=T)
+
