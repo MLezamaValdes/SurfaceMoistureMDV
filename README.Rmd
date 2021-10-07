@@ -20,7 +20,7 @@ knitr::opts_chunk$set(
 
 The script "descriptive.Rmd" can be reproduced via Binder by following the link to [Binder](https://mybinder.org/v2/gh/MLezamaValdes/SurfaceMoistureMDV/master?urlpath=rstudio), opening the SurfaceMoistureMDV.Rproj project file and subsequently running the descriptive.Rmd file. 
 
-
+Supplementary material and data can also be found on [OSF](https://osf.io/2ktwg/).  
 
 <!-- [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/MLezamaValdes/SurfaceMoistureMDV/master) -->
 
