@@ -15,9 +15,14 @@ knitr::opts_chunk$set(
 # Surface Moisture for the Antarctic McMurdo Dry Valleys
 
 <!-- badges: start -->
-.. image:: https://mybinder.org/badge_logo.svg
- :target: https://mybinder.org/v2/gh/MLezamaValdes/SurfaceMoistureMDV/HEAD
 <!-- badges: end -->
+
+
+The script "descriptive.Rmd" can be reproduced via Binder by following the link to [Binder](https://mybinder.org/v2/gh/MLezamaValdes/SurfaceMoistureMDV/master?urlpath=rstudio), opening the SurfaceMoistureMDV.Rproj project file and subsequently running the descriptive.Rmd file. 
+
+
+
+<!-- [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/MLezamaValdes/SurfaceMoistureMDV/master) -->
 
 This repository documents the worflow to produce high spatiotemporal resolution (30m, subdaily) surface moisture data for the Antarctic Dry Valleys. 
 
