@@ -1,0 +1,34 @@
+---
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+
+# Surface Moisture for the Antarctic McMurdo Dry Valleys
+
+<!-- badges: start -->
+<!-- badges: end -->
+
+This repository documents the worflow to produce high spatiotemporal resolution (30m, subdaily) surface moisture data for the Antarctic Dry Valleys. 
+
+### Data
+
+iButton and Automatic Weatherstation (AWS) data will be used to calibrate and validate a model with the help of spatially continuous predictors: 
+
+![Calibration and Validation data](map_stations_s.png){width=250}
+
+![Spatial predictors](spatial_predictors.png){width=250}
+
+
+### Methods 
+First, statistical relations at the point data locations are being learned by a machine learning model (Fig. below 1), then the model is applied to the remaining spatial predictor space (Fig. below 2). Using the concept of the Area of Applicability developed by Meyer and Pebesma (2021), we make sure that the model is only applied to locations, where we can assume the model to have received sufficient information on the statistical relations. Finally (Fig. below 3) the gaps in time produced by the coarse temporal resolution of the spatially continous predictor data can be filled by spatio-temporal interpolation of the spatially continous surface moisture datasets created in step 2. 
+
+![Method](Method.png){width=500}
