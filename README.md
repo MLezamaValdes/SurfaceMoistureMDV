@@ -6,17 +6,20 @@
 <!-- badges: start -->
 <!-- badges: end -->
 
-The script “descriptive.Rmd” can be reproduced via Binder by following
-the link to
-[Binder](https://mybinder.org/v2/gh/MLezamaValdes/SurfaceMoistureMDV/master?urlpath=rstudio),
-opening the SurfaceMoistureMDV.Rproj project file and subsequently
-running the descriptive.Rmd file.
-
-<!-- [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/MLezamaValdes/SurfaceMoistureMDV/master) -->
-
 This repository documents the worflow to produce high spatiotemporal
 resolution (30m, subdaily) surface moisture data for the Antarctic Dry
 Valleys.
+
+The script “data\_overview\_reproducible.Rmd” can be reproduced via
+Binder by klicking on the launch button, installing the required
+packages by running “install.R” and subsequently running the
+“data\_overview\_reproducible.Rmd” file.
+[![Binder](badge_logo.svg)](https://mybinder.org/v2/gh/MLezamaValdes/SurfaceMoistureMDV/master)
+
+Supplementary material and data can also be found on
+[OSF](https://osf.io/2ktwg/).
+
+<!-- [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/MLezamaValdes/SurfaceMoistureMDV/master) -->
 
 ### Data
 

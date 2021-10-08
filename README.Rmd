@@ -17,14 +17,14 @@ knitr::opts_chunk$set(
 <!-- badges: start -->
 <!-- badges: end -->
 
+This repository documents the worflow to produce high spatiotemporal resolution (30m, subdaily) surface moisture data for the Antarctic Dry Valleys. 
 
-The script "data_overview_reproducible.Rmd" can be reproduced via Binder by following the link to [Binder](https://mybinder.org/v2/gh/MLezamaValdes/SurfaceMoistureMDV/master?urlpath=rstudio), installing the required packages by running "install.R" and subsequently running the "data_overview_reproducible.Rmd" file. 
+The script "data_overview_reproducible.Rmd" can be reproduced via Binder by klicking on the launch button, installing the required packages by running "install.R" and subsequently running the "data_overview_reproducible.Rmd" file. 
+[![Binder](badge_logo.svg)](https://mybinder.org/v2/gh/MLezamaValdes/SurfaceMoistureMDV/master)
 
 Supplementary material and data can also be found on [OSF](https://osf.io/2ktwg/).  
 
 <!-- [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/MLezamaValdes/SurfaceMoistureMDV/master) -->
-
-This repository documents the worflow to produce high spatiotemporal resolution (30m, subdaily) surface moisture data for the Antarctic Dry Valleys. 
 
 ### Data
 
