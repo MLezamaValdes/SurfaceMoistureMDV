@@ -1,0 +1,221 @@
+---
+title: "Calibration and validation data for surface moisture in the McMurdo Dry Valleys"
+author: "Maite"
+date: "13 9 2021"
+
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = F, warning=F, echo = F)
+```
+
+
+```{r}
+library(sf)
+library(ggplot2)
+library(gridExtra)
+library(grid)
+library(colorspace)
+library(here)
+library(dplyr)
+library(lubridate)
+library(padr)
+```
+
+This skript shows calibration and validation data for surface moisture modelling in the McMurdo Dry Valleys in a descriptive way. 
+
+# iButton data
+
+Read in iButton data for the different valleys. 
+
+```{r, message=F, results='hide'}
+iButDir <- paste0(here("data/calib_valid/iButtons/"))
+
+gpkdir <- paste0(iButDir, "/gpkg/")
+f <- list.files(gpkdir,full.names=T)
+
+iB_valley <- lapply(seq(f),function(i){
+  st_read(f[[i]])
+})
+
+
+```
+
+Project iButton data to EPSG 3031
+```{r}
+predDir <- here("data/predictors/") 
+predcrs <- readRDS(list.files(predDir, pattern="predcrs", full.names=T)) 
+iB_valley <- lapply(seq(iB_valley), function(i){
+  x <- st_transform(iB_valley[[i]], crs = st_crs(predcrs))
+  x$Site_Name <- factor(x$Site_Name)
+  x
+})
+names(iB_valley) <- tools::file_path_sans_ext(basename(f))
+```
+
+
+Use only data, where temperature is higher than -1°C
+```{r}
+
+onlySummer <- TRUE 
+
+unique_locations <- st_difference(iB_valley$iBut)
+valleys <- unique(unique_locations$Valley) 
+
+iButPlots <- lapply(seq(valleys), function(v){
+  iBut_Vlly <- iB_valley[[which(names(iB_valley)==valleys[v])]]
+  iBut_Vlly <- iBut_Vlly[order(iBut_Vlly$time),]
+  # cut into two to not get the gap in the middle where temperatures are too low
+  timeslot1 <- iBut_Vlly[order(iBut_Vlly$time) < (max(order(iBut_Vlly$time))/2),] 
+  timeslot2 <- iBut_Vlly[order(iBut_Vlly$time) > (max(order(iBut_Vlly$time))/2),] 
+  
+  iBut_Vlly <- list(timeslot1, timeslot2)
+  
+  fp <- lapply(seq(iBut_Vlly), function(i){
+    
+      if(onlySummer == TRUE){
+        iBut_Vlly[[i]] <- iBut_Vlly[[i]][month(iBut_Vlly[[i]]$time) %in% c(11,12,1,2),] 
+      }
+      
+      iBut_Vlly[[i]]$Rh[iBut_Vlly[[i]]$T < -1] <- NA
+      
+      fs <- unique(year(iBut_Vlly[[i]]$time))
+      
+      pRh <- ggplot(iBut_Vlly[[i]], aes(x=time, y=Rh, color=Site_Name)) +
+            scale_colour_viridis_d()+
+            geom_line() +
+            ggtitle(paste0("field season ", paste(fs, collapse = '/')))+
+            xlab("")
+    
+    
+      pT <- ggplot(iBut_Vlly[[i]], aes(x=time, y=T, color=Site_Name)) +
+            scale_colour_viridis_d()+
+            geom_line() +
+            geom_hline(yintercept = -1, linetype = "dotted")+
+            xlab("")
+      
+      fp <- arrangeGrob(pRh, pT, nrow = 2)
+  })
+  return(fp)  
+
+})
+
+```
+
+
+To see the iButton logger location names, hold cursor over point.
+
+### Hidden_Valley
+```{r}
+grid.draw(iButPlots[[1]][[1]])
+grid.draw(iButPlots[[1]][[2]])
+
+```
+
+
+### Wright_Valley  
+```{r}
+grid.draw(iButPlots[[2]][[1]])
+grid.draw(iButPlots[[2]][[2]])
+
+```
+
+### McKelvey_Valley
+```{r}
+grid.draw(iButPlots[[3]][[1]])
+grid.draw(iButPlots[[3]][[2]])
+
+```
+
+### Victoria_Valley
+```{r}
+grid.draw(iButPlots[[4]][[1]])
+grid.draw(iButPlots[[4]][[2]])
+
+```
+
+### Alatna_Valley  
+```{r}
+grid.draw(iButPlots[[5]][[1]])
+grid.draw(iButPlots[[5]][[2]])
+
+```
+
+### Taylor_Valley
+```{r}
+grid.draw(iButPlots[[6]][[1]])
+grid.draw(iButPlots[[6]][[2]])
+
+```
+
+TV-S-500 seems to be below a snow patch in a shady corner and is fully saturated. 
+
+# Automatic Weather Station Data
+### Lake Fryxell Met Station
+Dataset can be downloaded here: [Lake Fryxell](https://mcm.lternet.edu/content/high-frequency-measurements-lake-fryxell-meteorological-station-frlm-mcmurdo-dry-valleys)
+
+There are two datasets, one for relative humidity and one for soil moisture,
+they are structured as follows: 
+
+```{r}
+awsDir <- here("data/calib_valid/AWS/")
+lf_rh <- list.files(awsDir, full.names=T, pattern="frlm_rh")
+lf_st <- list.files(awsDir, full.names=T, pattern="frlm_soilt")
+
+f_rh <- read.csv(lf_rh)
+head(f_rh, n=3)
+f_rh$datetime <- as.POSIXct(f_rh$DATE_TIME, format="%d/%m/%Y %H:%M")
+
+f_st <- read.csv(lf_st)
+head(f_st, n=3)
+f_st$datetime <- as.POSIXct(f_st$DATE_TIME, format="%d/%m/%Y %H:%M")
+```
+
+Years that are covered in this dataset are: 
+```{r, out.width = '40%'}
+hist(year(f_rh$datetime), main="RH Observations per year", 
+     xlab="Year", ylab="n observations")
+hist(year(f_st$datetime), main="Soil Temperature Observations per year", 
+     xlab="Year", ylab="n observations")
+```
+
+Let's for now take a look at the year 2013 and focus on Relative Humidity and 
+the soil temperature at surface level. We're excluding timestamps where surface 
+soil temperature is below -1°C. When soil and surface water freezes no reliable 
+relative humidity information can be measured any more. 
+```{r}
+f_rh13 <- f_rh[year(f_rh$datetime)==2013,]
+f_st13 <- f_st[year(f_st$datetime)==2013,]
+
+# filling the gaps in incomplete datetime variables so that no 
+#data are actually no data in the plot
+f_rh13 <- pad(f_rh13) 
+f_st13 <- pad(f_st13)
+
+# which timestamps are useable? 
+f_rh13$useable <- 1
+f_rh13$useable[f_st13$SOILT0CM < (-1)] <- 0
+f_rh13$useable <- factor(f_rh13$useable)
+
+f_st13$useable <- 1
+f_st13$useable[f_st13$SOILT0CM < (-1)] <- 0
+f_st13$useable <- factor(f_st13$useable)
+
+prh <- ggplot(f_rh13, aes(datetime, RH, color=useable))+
+  geom_point(size=0.5)+
+  scale_color_manual(values=c("#e1e2e6","#0d0d0c"))+
+  ggtitle("Relative Humidity")+
+  theme_minimal()
+pst <- ggplot(f_st13, aes(datetime, SOILT0CM, color=useable))+
+  geom_point(size=0.5)+
+  geom_hline(yintercept = -1, lty="dashed")+
+  scale_color_manual(values=c("#e1e2e6","#0d0d0c"))+
+  ggtitle("Soil temperature at surface level")+
+  theme_minimal()
+
+gridExtra::grid.arrange(prh,pst)
+
+
+```
+
