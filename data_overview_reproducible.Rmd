@@ -46,8 +46,9 @@ Project iButton data to EPSG 3031
 ```{r}
 predDir <- here("data/predictors/") 
 predcrs <- readRDS(list.files(predDir, pattern="predcrs", full.names=T)) 
+
 iB_valley <- lapply(seq(iB_valley), function(i){
-  x <- st_transform(iB_valley[[i]], crs = st_crs(predcrs))
+  x <- st_transform(iB_valley[[i]], crs = st_crs(predcrs$input))
   x$Site_Name <- factor(x$Site_Name)
   x
 })
