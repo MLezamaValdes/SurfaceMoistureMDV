@@ -2,6 +2,7 @@
 title: "Work in progress on Surface Moisture modelling in the MDV"
 author: "Maite"
 date: "2 9 2021"
+bibliography: lit.bib
 
 output: 
  rmarkdown::html_document:
@@ -50,20 +51,55 @@ knitr::opts_chunk$set(echo = TRUE)
 
 * For Method 1 and 2:  <font size="4"> <span style="color:YellowGreen">**How accuarate can surface moisture be modeled for the open soil areas within the Antarctic Dry Valleys? **</span> </font> 
 
-
 * actually interesting question:  <font size="4"> <span style="color:YellowGreen">**Which factors does the spatio-temporal surface moisture configuration in the MDV depend upon?**</span> </font>  
 
 ### What we know about surface moisture in the MDV
 
+<font size="3"> <span style="color:IndianRed">**and how to translate it into the approach**</span> </font> 
+
 * very low overall
-* longer wavelenghts can pick it up 
-* short duration of hydrological events
-* ...
+* longer wavelenghts can pick it up  <font size="3"> <span style="color:IndianRed">**Predictor: SWIR**</span> </font> 
+* short duration of hydrological events 
+
+<font size="4"> <span style="color:DarkGoldenrod">**Soil Moisture generally**</span> </font> 
+
+* soil moisture controls soil thermodynamics [@Farouki.1981; @Outcalt.1990]  <font size="3"> <span style="color:IndianRed">**Predictor: LST**</span> </font> 
+* ground temperatures close to 0°, interstitial soil moisture doesn't freeze immediately, abruptly, rather  a "freezing window", unfrozen water can exist at temperatures well below freezing [@Anderson.1973; @Romanovsky.2000]
+
+<font size="4"> <span style="color:DarkGoldenrod">**Soil Moisture MDV**</span> </font> 
+
+* soil moisture content important factor of thermal soil properties in the MDV, locations of most active heat-exchange are wetter soils with deeper active layers. Where there is less moisture, active layers are more shallow (most part in the MDV) [@Ikard.2009] Valley bottom soils very low SWC, 1% water volume in upper 3cm [@Campbell.1998]
+* proximity to hydrologic reservoirs spatial control on soil moisture [@Wlostowski.2018]
+  * snow patches
+  * streams
+  * lakes 
+* spatially discrete "wet patches" appear darker [@Wlostowski.2018], mechanisms for their formation:  <font size="3"> <span style="color:IndianRed">**Predictor: optical satellite info**</span> </font> 
+  * deliquescence (direct condensation of atmospheric water vapor into saline surficial soil pore spaces) [@Levy.2012]
+  * subsurface routing of meltwater through water tracks [@Levy.2011], coincident with regions of high topographic flow accumulation <font size="3"> <span style="color:IndianRed">**Predictor: TWI**</span> </font> 
+* wet patch location [@Langford.2015]: topography, regional microclimate influence their distribution  <font size="3"> <span style="color:IndianRed">**Predictor: find a way to incorporate information on small depressions (1m DEM) **</span> </font> 
+* **soil moisture controls freezing dynamics**: based on field observations from sites with natural moisture gradients (active layer monitoring stations: temperature, soil moisture, pore water specific conductance along natural moisture gradient) and a numerical model, magnitude and trend of freezing rates as a function of soil moisture was captured: Soil moisture is a central control of freeze-thaw dynamics of active layer soils in the MDV "..a warmer and more variable climate will ... exacerbate freeze-thaw cycling in the driest portions of the landscape". Freezing events happen mosty in distal soils, i.e. where there is less soil moisture, low water content leads to more active layer freezing events, 0.08 m³/m³ seems to be the defining threshold, whether there will be much or little freezing events [@Wlostowski.2018]
+
+<font size="4"> <span style="color:DarkGoldenrod">**MDV future climate**</span> </font> 
+
+* warming in the MDV expected [@Chapman.2007], near surface warming will increase soil moisture in landscape probably by: 
+  * melt > sublimation in snow patch ablation [@Gooseff.2003]
+  * rates of ground ice and permafrost thaw will enhance [@Fountain.2014]
+  * wetted margins (capillary wicking of moisture through soil pore spaces [@Gooseff.2007]) expanding around lakes and streams [@Gooseff.2007], the further away from open water source, the less SWC [@Northcott.2009], subnivian and adjacent soils profiting from snow patches in terms of moisture [@Campbell.1998; @Gooseff.2003]
+  
+<font size="4"> <span style="color:DarkGoldenrod">**MDV ecosystems**</span> </font> 
+
+* MDV ecosystems "strongly controlled by **abiotic habitat variables**" [@Wlostowski.2018]
+* "Nematodes are the most abundant invertebrates found in the Dry Valleys soils and occupy the highest trophic level of a relatively simple soil food chain" [@Cary.2010]. "Future changes in soil moisture will alter active layer freezing dynamics, possible eliciting **shifts in nematode species diversity and abundance**" [@Wlostowski.2018]
+
+
 
 ## Questions
 
 * should I only use values above 0 degrees? Find out when water freezes in the 
 MDV and how the relation to salinity would be
+
+* How does RH relate to soil moisture?
+
 
 ## Data 
 
@@ -123,4 +159,5 @@ than EC (because it's already a log scale!), but I could also share EC estimates
 
 
 
+# References
 

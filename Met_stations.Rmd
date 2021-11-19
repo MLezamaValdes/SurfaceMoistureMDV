@@ -1,0 +1,221 @@
+---
+title: "AWS_Met_Stations"
+author: "Maite"
+date: "29 10 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r, echo=F, message=F, warning=F}
+library(sf)
+library(mapview)
+library(ggplot2)
+library(padr)
+library(gridExtra)
+library(grid)
+library(colorspace)
+library(here)
+library(dplyr)
+library(lubridate)
+```
+
+
+### Met Stations
+
+Unfortunately, all of them can't be used, because Relative Humidity is measured at 3m height. 
+
+Dataset can be downloaded here: [Met Data](https://mcm.lternet.edu/meteorology-data-sets)
+
+
+```{r, echo=F, message=F, warning=F}
+awsDir <- here("../calib_valid/AWS/")
+
+ml <- read.csv(list.files(awsDir, pattern="METLOCS",full.names=T), sep=",")
+
+ml <- ml[complete.cases(ml$LONGITUDE),]
+ml <- ml[grepl("Met Station", ml$LOCATION_NAME),]
+
+
+aoi <- st_read(here("../aux_data/Levy_MDV_actually.shp"))
+dem <- raster::raster(here("../predictors/DEM_8m_MDV_filled_aoi.tif"))
+
+
+# ml$running <- 0
+# ml$YEAR_REMOVED[is.na(ml$YEAR_REMOVED)] <- 0
+# ml$YEAR_REMOVED-ml$YEAR_INSTALLED
+```
+
+
+**Promising stations on soil (12) ** 
+
+Mt. Fleming Met Station (AirT 2m and 1.3m aboveground, RH probably same heights)
+
+Beacon Valley Met Station (soil temperature 0cm RH at 3m)
+
+Friis Hills Met Station (AirT 3m above ground, RH at 3m)
+
+Bonney Riegel Sensit/Theta Soil Met Station (= Snowfence station. no RH)
+
+Upper Howard Met Station (RH at 3m)
+
+* Garwood Valley Met Station (RH and soiltemperature 0m present, not sure *whether RH is measured in soil or at 3m height?*)
+
+Garwood Ice Cliff Met Station (RH at 3m, no soil temperature)
+
+* Miers Valley Met Station (there is soil temperature 0m, not sure *whether RH is measured in soil or at 3m height?* )
+
+F6 Sensit/Theta Soil Met Station (no RH)
+
+Lake Brownworth Met Station (soil temperature 0m, RH at 3m)
+
+Lake Vanda Met Station (soil temperature 0m, RH at 3m)
+
+* Explorer's Cove Met Station (there is soil temperature 0m, not sure *whether RH is measured in soil or at 3m height?* )
+
+**Stations at the edge of lakes (3)** 
+
+Lake Bonney Met Station (soil temperature 0m, RH at 3m)
+
+Lake Vida Met Station (soil temperature 0m, RH at 3m)
+
+Lake Fryxell Met Station (there is soil temperature 0m, not sure *whether RH is measured in soil or at 3m height?* )
+
+**Stations on glaciers / lakes - not to use (6)**
+
+* Taylor Glacier Met Station
+
+* Howard Glacier Met Station 
+
+* Lake Fryxell Center Ice Met Station
+
+* Commonwealth Glacier Met Station
+
+* Canada Glacier Met Station 
+
+* Lake Hoare Met Station
+
+
+The following map shows the research area and the AWS to be used in yellow, those excluded in red and those I'm not sure about in black. 
+
+```{r, echo=F, message=F, warning=F}
+ml_points <- st_as_sf(ml, coords = c("LONGITUDE", "LATITUDE"), 
+         crs = 4326)
+
+use <- c("use", "use", "not", 
+         "not", "use", "use", 
+         "use", "use", "use",
+         "not", "maybe", "use", 
+         "not", "maybe", "not", 
+         "use", "maybe", "use",
+         "use", "not", "use")
+names(use) <- ml_points$LOCATION_NAME
+ml_points$use <- as.factor(use)
+
+mapview::mapview(ml_points, label="LOCATION_NAME",
+                 col.regions = mapviewGetOption("raster.palette"),
+                 zcol="use", map.types="Esri.WorldImagery")+
+  mapview::mapview(aoi, map.types = c("Esri.WorldImagery"),
+                 alpha.regions = 0,
+                 color = 'chartreuse3',
+                 lwd=3)+
+  mapview::mapview(dem,na.color="#00000000", map.types = "Esri.WorldImagery")
+```
+
+
+
+```{r, echo=F, message=F, warning=F}
+lf_rh <- list.files(awsDir, full.names=T, pattern="frlm_rh")
+lf_st <- list.files(awsDir, full.names=T, pattern="frlm_soilt")
+
+f_rh <- read.csv(lf_rh)
+head(f_rh, n=3)
+# str(f_rh)
+# unique(f_rh$RH_COMMENTS)
+f_rh$datetime <- as.POSIXct(f_rh$DATE_TIME, format="%d/%m/%Y %H:%M")
+
+f_st <- read.csv(lf_st)
+head(f_st, n=3)
+# str(f_st)
+# unique(f_st$SOILT_COMMENTS)
+f_st$datetime <- as.POSIXct(f_st$DATE_TIME, format="%d/%m/%Y %H:%M")
+# unique(year(f_st$datetime))
+```
+
+Years that are covered in this dataset are: 
+```{r, echo=F, message=F, warning=F}
+hist(year(f_rh$datetime), main="RH Observations per year", 
+     xlab="Year", ylab="n observations")
+hist(year(f_st$datetime), main="Soil Temperature Observations per year", 
+     xlab="Year", ylab="n observations")
+```
+
+
+
+Let's for now take a look at the year 2013 (we've got data from Taylor valley 
+for that season) and focus on Relative Humidity and 
+the soil temperature at surface level. We're excluding timestamps where surface 
+soil temperature is below -1°C. When soil and surface water freezes no reliable 
+relative humidity information can be measured any more. 
+```{r, echo=F, message=F, warning=F}
+f_rh13 <- f_rh[year(f_rh$datetime)==2013,]
+f_st13 <- f_st[year(f_st$datetime)==2013,]
+
+# filling the gaps in incomplete datetime variables so that no 
+#data are actually no data in the plot
+f_rh13 <- pad(f_rh13) 
+f_st13 <- pad(f_st13)
+
+# which timestamps are useable? 
+f_rh13$useable <- 1
+f_rh13$useable[f_st13$SOILT0CM < (-1)] <- 0
+f_rh13$useable <- factor(f_rh13$useable)
+
+f_st13$useable <- 1
+f_st13$useable[f_st13$SOILT0CM < (-1)] <- 0
+f_st13$useable <- factor(f_st13$useable)
+
+prh <- ggplot(f_rh13, aes(datetime, RH, color=useable))+
+  geom_point(size=0.5)+
+  scale_color_manual(values=c("#e1e2e6","#0d0d0c"))+
+  ggtitle("Relative Humidity")+
+  theme_minimal()
+pst <- ggplot(f_st13, aes(datetime, SOILT0CM, color=useable))+
+  geom_point(size=0.5)+
+  geom_hline(yintercept = -1, lty="dashed")+
+  scale_color_manual(values=c("#e1e2e6","#0d0d0c"))+
+  ggtitle("Soil temperature at surface level")+
+  theme_minimal()
+
+gridExtra::grid.arrange(prh,pst)
+```
+Weird pattern! Why only data for half the month but frosting and defrosting during
+the whole year?! 
+
+Zoom in on one month
+```{r, echo=F, message=F, warning=F}
+f_rh13_jan <- f_rh13[month(f_rh13$datetime)==3,]
+f_st13_jan <- f_st13[month(f_st13$datetime)==3,]
+
+prh <- ggplot(f_rh13_jan, aes(datetime, RH, color=useable))+
+  geom_point(size=0.5)+
+  geom_line()+
+  scale_color_manual(values=c("#e1e2e6","#0d0d0c"))+
+  ggtitle("Relative Humidity")+
+  theme_minimal()
+pst <- ggplot(f_st13_jan, aes(datetime, SOILT0CM, color=useable))+
+  geom_point(size=0.5)+
+  geom_line()+
+  geom_hline(yintercept = -1, lty="dashed")+
+  scale_color_manual(values=c("#e1e2e6","#0d0d0c"))+
+  ggtitle("Soil temperature at surface level")+
+  theme_minimal()
+
+gridExtra::grid.arrange(prh,pst)
+```
+
+

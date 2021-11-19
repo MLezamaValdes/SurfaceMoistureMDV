@@ -1,0 +1,86 @@
+---
+title: "iButtons in correct coordinates"
+author: "Maite"
+date: "2 11 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, message=F, warning=F, echo=F}
+library(sf)
+library(mapview)
+library(ggplot2)
+library(padr)
+library(gridExtra)
+library(grid)
+library(colorspace)
+library(here)
+library(dplyr)
+library(lubridate)
+
+iButDir <- paste0(here("data/calib_valid/iButtons/"))
+iBut_ovrv <- readxl::read_excel(paste0(iButDir, "/iButton overview_20210420.xlsx"))
+
+iBut_ovrv <- iBut_ovrv[!is.na(iBut_ovrv$Longitude),]
+iBut_ovrv <- iBut_ovrv[!is.na(iBut_ovrv$Latitude),]
+
+options(digits=8)
+
+iBut_ovrv$LongitudeF <- gsub("E", "", iBut_ovrv$Longitude)
+iBut_ovrv$LatitudeF <- gsub("S", "", iBut_ovrv$Latitude)
+
+
+TV <- iBut_ovrv[iBut_ovrv$Valley == "Taylor_Valley",]
+iBut_ovrv <- iBut_ovrv[iBut_ovrv$Valley != "Taylor_Valley",]
+
+# DDM Degrees Decimal Minutes to DD Decimal Degrees 
+angle2dec_Lon <- function(angle) {
+  angle <- as.character(angle)
+  x <- do.call(rbind, strsplit(angle, split=' '))
+  x <- apply(x, 1L, function(y) {
+    y <- as.numeric(y)
+    y[1] + y[2]/60
+  })
+  return(x)
+}
+
+angle2dec_Lat <- function(angle) {
+  angle <- as.character(angle)
+  x <- do.call(rbind, strsplit(angle, split=' '))
+  x <- apply(x, 1L, function(y) {
+    y <- as.numeric(y)
+    y[1] + y[2]/60
+  })
+  return(x*(-1))
+}
+
+
+
+iBut_ovrv$LongitudeF <- gsub("E", "", iBut_ovrv$Longitude)
+iBut_ovrv$LatitudeF <- gsub("S", "", iBut_ovrv$Latitude)
+
+iBut_ovrv$LatDec <- angle2dec_Lat(iBut_ovrv$LatitudeF)
+iBut_ovrv$LonDec <- angle2dec_Lon(iBut_ovrv$LongitudeF)
+
+iBut_shape_dec <- st_as_sf(iBut_ovrv, coords = c("LonDec", "LatDec"), 
+                 crs = 4326)
+
+iBut_shape_dec[c("LatitudeF", "LongitudeF")] <- NULL
+
+TV$LatitudeF <- gsub("\\.", "", TV$LatitudeF)
+TV$LatitudeF <- gsub("[[:space:]]", ".", TV$LatitudeF)
+TV$LatitudeF <- as.numeric(TV$LatitudeF)*(-1)
+TV$LongitudeF <- gsub("\\.", "", TV$LongitudeF)
+TV$LongitudeF <- gsub("[[:space:]]", ".", TV$LongitudeF)
+
+TV_shape <- st_as_sf(TV, coords = c("LongitudeF", "LatitudeF"), 
+                 crs = 4326)
+
+all_iButs <- rbind(iBut_shape_dec, TV_shape)
+mapview(all_iButs, zcol="Valley",
+        map.types = "Esri.WorldImagery")
+```
