@@ -1,0 +1,522 @@
+---
+title: "Prepare AWS SoilStations dataset"
+author: "Maite"
+date: "2 12 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=F, warning=FALSE, message=FALSE}
+library(sf)
+library(mapview)
+library(ggplot2)
+library(padr)
+library(gridExtra)
+library(grid)
+library(colorspace)
+library(here)
+library(dplyr)
+library(lubridate)
+library(readxl)
+library(raster)
+```
+
+### Read Soil Station data
+
+Files were read and non-empty columns retained. A column name from the 
+first three lines of the excel files was created. Finally, the so created
+column names were matched to the pattern for the following variables of 
+interest: 
+
+
+ID, 
+Year, 
+Hour, 
+Date
+Air Temp (°C, 1.6m)
+Solar Radiation (W/m²), 3m
+Wind Speed (m/s), 3m
+Wind Direction (azimuth), 3m
+
+Soil Temp (°C) Surface under white rock
+Soil Temp (°C) Surface under black rock
+
+Soil RH (%) 5cm
+Soil RH (%) 15cm
+
+MRC Soil Temp °C 0 in 
+MRC Soil Temp °C 3 in 7,6cm
+
+Soil 2cm: 
+ER	unitless	Real dielectric constant
+EI	unitless	Imaginary dielectric constant
+Temp	°C	Temperature
+ER_COR	unitless	Temperature corrected ER
+EI_COR	unitless	Temperature corrected EI
+WATER	wfv	Soil moisture
+SALINITY	g NaCl/L	Soil salinity
+SOIL_COND	S/m	Soil conductivity
+SOIL_COND_COR	S/m	Temp corrected soil conductivity
+WATER_CON_COR	S/m	Temp corrected conductivity of the water in the soil
+
+
+```{r, warning=FALSE, message=FALSE}
+sdirs <- list.dirs(here("../calib_valid/AWS/SoilStations/"))[-1]
+
+# PATTERNS FOR SUBSETTING THE DATASETS 
+# BULL PASS     
+pat_BP <- c("ID","YEAR_NA_NA", "HOUR_NA_NA", "DATE_NA_NA",
+         "Air_Temp_deg_C", "Solar_Radiation_W/m2",
+         "Wind_Speed_m/s", "Wind_Direction_deg_True_N",
+         "Soil_Temp_2_cm_White_deg_C", "Soil_Temp_2_cm_Black_deg_C",
+         "MRC_0_cm_deg_C", "MRC_7.5_cm_deg_C", "SOIL_RH_%", "SOIL_RH_%", 
+         "ER_2_cm,_1_NA", "EI_2_cm,_1_NA","TEMP_2_cm,_1_deg_C",
+         "ER_COR_2_cm,_1_NA","EI_COR_2_cm,_1_NA","WATER_2_cm,_1_wfv" ,
+         "SALINITY_2_cm,_1_g_NaCl/L",   "SOIL_COND_2_cm,_1_S/m","SOIL_COND_COR_2_cm,_1_S/m" ,
+         "WATER_CON_COR_2_cm,_1_S/m")
+
+# BULL PASS EAST 
+# don't exist: "Soil_Temp_2_cm_White_deg_C", "Soil_Temp_2_cm_Black_deg_C", 
+# MRC_5.5_cm_deg_C instead of 7.5cm 
+# instead of "SOIL_RH_%" there is "Soil_RH_2cm_%" 
+# Bull Pass East from 2019 is mostly empty 
+pat_BPE <- c("ID","YEAR_NA_NA", "HOUR_NA_NA", "DATE_NA_NA",
+         "Air_Temp_deg_C", "Solar_Radiation_W/m2","Relative_Humidity_%",
+         "Wind_Speed_m/s", "Wind_Direction_deg_True_N",
+         "MRC_0_cm_deg_C", "MRC_5_cm_deg_C", 
+         "Soil_RH_2_cm_%","Soil_Temp_2_cm_deg_C",
+         "ER_2_cm,_1_NA", "EI_2_cm,_1_NA","TEMP_2_cm,_1_deg_C",
+         "ER_COR_2_cm,_1_NA","EI_COR_2_cm,_1_NA","WATER_2_cm,_1_wfv" ,
+         "SALINITY_2_cm,_1_g_NaCl/L",   "SOIL_COND_2_cm,_1_S/m","SOIL_COND_COR_2_cm,_1_S/m" ,
+         "WATER_CON_COR_2_cm,_1_S/m")
+
+# DON JUAN POND
+# don't exist: "Soil_Temp_2_cm_White_deg_C", "Soil_Temp_2_cm_Black_deg_C", 
+# MRC_5_cm_deg_C instead of 7.5cm 
+# instead of "SOIL_RH_%", there's "Soil_RH_2_cm_%" 
+# 2019: data missing 
+pat_DJP <- c("ID","YEAR_NA_NA", "HOUR_NA_NA", "DATE_NA_NA",
+         "Air_Temp_deg_C", "Solar_Radiation_W/m2",
+         "Wind_Speed_m/s", "Wind_Direction_deg_True_N",
+         "MRC_0_cm_deg_C", "MRC_5_cm_deg_C", "Soil_RH_2_cm_%", 
+         "ER_2_cm,_1_NA", "EI_2_cm,_1_NA","TEMP_2_cm,_1_deg_C",
+         "ER_COR_2_cm,_1_NA","EI_COR_2_cm,_1_NA","WATER_2_cm,_1_wfv" ,
+         "SALINITY_2_cm,_1_g_NaCl/L",   "SOIL_COND_2_cm,_1_S/m","SOIL_COND_COR_2_cm,_1_S/m" ,
+         "WATER_CON_COR_2_cm,_1_S/m")
+# GRANITE HARBOUR
+# don't exist: "Soil_Temp_2_cm_White_deg_C", "Soil_Temp_2_cm_Black_deg_C", 
+# Air_Temp,_1_deg_C 
+# MRC MRC_5.5_cm_deg_C instead of 7.5 or 5
+# No soil RH
+# ER,, EI, etc 2.5cm instead of 2cm 
+pat_GH <- c("ID","YEAR_NA_NA", "HOUR_NA_NA", "DATE_NA_NA",
+         "Air_Temp,_1_deg_C", "Solar_Radiation_w/m2",
+         "Wind_Speed_m/s", "Wind_Direction_deg_True_N",
+         "MRC_0_cm_deg_C", "MRC_5.5_cm_deg_C", 
+         "ER_2.5_cm_NA","EI_2.5_cm_NA","TEMP_2.5_cm_deg_C","ER_COR_2.5_cm_NA",
+         "EI_COR_2.5_cm_NA","WATER_2.5_cm_wfv","SALINITY_2.5_cm_g_NaCl/L",
+         "SOIL_COND_2.5_cm_S/m","SOIL_COND_COR_2.5_cm_S/m","WATER_CON_COR_2.5_cm_S/m" )
+
+# MARBLE POINT
+# don't exist: "Soil_Temp_2_cm_White_deg_C", "Soil_Temp_2_cm_Black_deg_C", 
+# "SOIL_RH_%" doesn't exist, instead: 
+pat_MP <-  c("ID","YEAR_NA_NA", "HOUR_NA_NA", "DATE_NA_NA",
+         "Air_Temp_deg_C", "Solar_Radiation_W/m2",
+         "Wind_Speed_m/s", "Wind_Direction_deg_True_N",
+         "MRC_0_cm_deg_C", "MRC_7.5_cm_deg_C", 
+         "ER_2_cm,_1_NA", "EI_2_cm,_1_NA","TEMP_2_cm,_1_deg_C",
+         "ER_COR_2_cm,_1_NA","EI_COR_2_cm,_1_NA","WATER_2_cm,_1_wfv" ,
+         "SALINITY_2_cm,_1_g_NaCl/L",   "SOIL_COND_2_cm,_1_S/m","SOIL_COND_COR_2_cm,_1_S/m" ,
+         "WATER_CON_COR_2_cm,_1_S/m")
+
+# MOUNT FLEMMING 
+# don't exist: "Soil_Temp_2_cm_White_deg_C", "Soil_Temp_2_cm_Black_deg_C"
+# no MRC, instead  "Soil_Temp_Poly2cm_deg_C"     "Soil_Temp_Poly7.5cm_deg_C"
+# no SOIL_RH_%
+pat_MtF <- c("ID","YEAR_NA_NA", "HOUR_NA_NA", "DATE_NA_NA",
+         "Air_Temp_deg_C", "Solar_Radiation_W/m2",
+         "Wind_Speed_m/s", "Wind_Direction_deg_True_N",
+          "Soil_Temp_Poly2cm_deg_C","Soil_Temp_Poly7.5cm_deg_C",
+         "ER_7.5_cm,_1_NA","EI_7.5_cm,_1_NA","TEMP_7.5_cm,_1_deg_C",
+         "ER_COR_7.5_cm,_1_NA","EI_COR_7.5_cm,_1_NA", "WATER_7.5_cm,_1_wfv",   
+         "SALINITY_7.5_cm,_1_g_NaCl/L", "SOIL_COND_7.5_cm,_1_S/m",
+         "SOIL_COND_COR_7.5_cm,_1_S/m" ,"WATER_CON_COR_7.5_cm,_1_S/m")
+
+# don't exist: "Soil_Temp_2_cm_White_deg_C", "Soil_Temp_2_cm_Black_deg_C"
+# no soil RH
+# 
+pat_VV <- c("ID","YEAR_NA_NA", "HOUR_NA_NA", "DATE_NA_NA",
+         "Air_Temp_deg_C", "Solar_Radiation_w/m2",
+         "Wind_Speed_m/s", "Wind_Direction_deg_True_N",
+         "MRC_0_cm_deg_C", "MRC_7.5_cm_deg_C", 
+         "ER_3_cm,_2_NA","EI_3_cm,_2_NA","TEMP_3_cm,_2_deg_C","ER_COR_3_cm,_2_NA",      
+         "EI_COR_3_cm,_2_NA","WATER_3_cm,_2_wfv","SALINITY_3_cm,_2_g_NaCl/L", 
+         "SOIL_COND_3_cm,_2_S/m","SOIL_COND_COR_3_cm,_2_S/m" , "WATER_CON_COR_3_cm,_2_S/m")
+
+
+pat_list <- list(pat_BP, pat_BPE, pat_DJP, pat_GH, pat_MP, pat_MtF, pat_VV)
+shortID <- list("BP", "BPE", "DJP", "GH", "MP", "MtF", "VV")
+
+```
+
+### Just for testing the patterns
+```{r, warning=FALSE, message=FALSE, eval=F}
+checktabs <- lapply(seq(sdirs), function(d){ # for all different stations
+  print(paste0("d= ",d))
+  f <- list.files(sdirs[d], full.names=T,pattern=".xls")
+  stat_year <- lapply(seq(length(f)), function(y){ # for all years available for this station
+  # loop through all of the files
+      print(y)
+      names_df <- read_excel(f[y],
+           col_names = F)
+      # get rid of empty columns
+      any(is.na(names_df[5,]))
+      
+      isnadf <- is.na(names_df[200:216,])
+      full_cols <- which(colSums(isnadf)!=16)
+      
+      pastenams <- apply(names_df[1:3,], 2, paste , collapse = "_" )
+      pastenams <- gsub(" ", "_", pastenams)
+      pastenams <- pastenams[full_cols]
+      
+      tab <- read_excel(f[y], .name_repair = "unique",
+                 skip=3)
+      
+      isnatabdf <- is.na(tab[200:216,])
+      full_cols_tab <- which(colSums(isnatabdf)!=16)
+      tab <- tab[,full_cols_tab]
+      ncol(tab)
+      length(pastenams)
+      
+      names(tab) <- pastenams
+      
+      names(tab)[1] <- "ID"
+      tab$ID <- shortID[[d]]
+      
+      return(tab[1:10,])
+  })
+})
+
+names(checktabs) <- basename(sdirs)[1:length(checktabs)]
+# saveRDS(checktabs, here("../calib_valid/AWS/SoilStations/checktabs.rds"))
+```
+
+Finding out what's going on: 
+```{r, warning=FALSE, message=FALSE, eval=F}
+
+# which variables in pat are in checktab names? 
+check_varsel <- lapply(seq(checktabs), function(d){ # for all different stations
+  sapply(seq(checktabs[[d]]), function(y){ # for all years available for this station
+    sel <- which(names(checktabs[[d]][[y]]) %in% pat_list[[d]])
+    length(sel)
+    return(length(sel))
+  })
+})
+
+names(check_varsel) <- basename(sdirs)[1:length(checktabs)]
+check_varsel
+
+# different naming for different stations? 
+
+'%notin%' <- Negate('%in%')
+
+# which columns could not be matched? 
+pat_not_matched <- lapply(seq(checktabs), function(d){ # for all different stations
+  s <- lapply(seq(checktabs[[d]]), function(y){ # for all years available for this station
+    not_matched <- which(pat_list[[d]] %notin% names(checktabs[[d]][[y]]))
+    return(pat[not_matched])
+  })
+  names(s) <- station_year[[d]]
+  return(s)
+})
+
+names(pat_not_matched) <- basename(sdirs)[1:length(checktabs)]
+
+
+# look into names per station 
+dy_names <- lapply(seq(checktabs), function(d){ # for all different stations
+  s <- sapply(seq(checktabs[[d]]), function(y){ # for all years available for this station
+    names(checktabs[[d]][[y]])
+  })
+  names(s) <- station_year[[d]]
+  return(s)
+})
+names(dy_names) <- basename(sdirs)[1:length(checktabs)]
+
+
+```
+
+
+```{r, warning=FALSE, message=FALSE, eval=F}
+# BULL PASS
+check_varsel$BullPass # to see whether there are differences over the years
+pat_not_matched$BullPass # all good
+# dy_names$BullPass$'2012' # all names in respective climate station
+
+# BULL PASS EAST 
+check_varsel$BullPassEast # to see whether there are differences over the years
+pat_not_matched$BullPassEast # which in pattern could not be matched
+# SOLVE: WHY IS MRC_0_cm_deg_C NOT MATCHED ALTHOUGH ITS IN PATTERN AND FILENAMES?????
+dy_names$BullPassEast$'2012' # all names in respective climate station
+
+# DON JUAN POND
+check_varsel$DonJuanPond # to see whether there are differences over the years
+pat_not_matched$DonJuanPond # which in pattern could not be matched
+# dy_names$DonJuanPond$'2012' # all names in respective climate station
+# adapt pattern to match the station using the data labels word-document 
+
+# GRANITE HARBOUR
+check_varsel$GraniteHarbour # to see whether there are differences over the years
+pat_not_matched$GraniteHarbour # which in pattern could not be matched
+# all good
+# dy_names$GraniteHarbour$'2012' # all names in respective climate station
+
+# MARBLE POINT
+check_varsel$MarblePoint # to see whether there are differences over the years
+pat_not_matched$MarblePoint # which in pattern could not be matched
+# dy_names$MarblePoint$'2012' # all names in respective climate station
+
+# MtFlemming
+check_varsel$MtFlemming # to see whether there are differences over the years
+pat_not_matched$MtFlemming # which in pattern could not be matched
+# dy_names$MtFlemming$'2012' # all names in respective climate station
+
+# vICTORIA VALLEY
+check_varsel$VictoriaValley # to see whether there are differences over the years
+pat_not_matched$VictoriaValley # which in pattern could not be matched
+# dy_names$VictoriaValley$'2012' # all names in respective climate station
+
+
+```
+
+
+### Now reading in the actual datasets and saving as RMD 
+
+```{r, warning=FALSE, message=FALSE, eval=F}
+
+tabs <- lapply(seq(sdirs), function(d){ # for all different stations
+  print(paste0("d= ",d))
+  f <- list.files(sdirs[d], full.names=T,pattern=".xls")
+  stat_year <- lapply(seq(length(f)), function(y){ # for all years available for this station
+  # loop through all of the files
+      print(y)
+      names_df <- read_excel(f[y],
+           col_names = F)
+      # get rid of empty columns
+      any(is.na(names_df[5,]))
+      
+      isnadf <- is.na(names_df[200:216,])
+      full_cols <- which(colSums(isnadf)!=16)
+      
+      pastenams <- apply(names_df[1:3,], 2, paste , collapse = "_" )
+      pastenams <- gsub(" ", "_", pastenams)
+      pastenams <- pastenams[full_cols]
+      
+      tab <- read_excel(f[y], .name_repair = "unique",
+                 skip=3)
+      
+      isnatabdf <- is.na(tab[200:216,])
+      full_cols_tab <- which(colSums(isnatabdf)!=16)
+      tab <- tab[,full_cols_tab]
+      ncol(tab)
+      length(pastenams)
+      
+      names(tab) <- pastenams
+      
+      names(tab)[1] <- "ID"
+      tab$ID <- shortID[[d]]
+      
+      return(tab)
+  })
+})
+
+
+names(tabs) <- basename(sdirs)
+# saveRDS(tabs, here("../calib_valid/AWS/SoilStations/all_SoilStation_data.rds"))
+
+
+```
+
+Subsetting by the pattern
+```{r, warning=FALSE, message=FALSE, eval=F}
+# get year corresponding to y per station
+station_year <- lapply(seq(tabs), function(d){ # for all different stations
+  sapply(seq(tabs[[d]]), function(y){ # for all years available for this station
+    tabs[[d]][[y]]$YEAR_NA_NA[1]
+  })
+})
+
+# subset by name
+tabs_varsel <- lapply(seq(tabs), function(d){ # for all different stations
+  s <- lapply(seq(tabs[[d]]), function(y){ # for all years available for this station
+    sel <- which(names(tabs[[d]][[y]]) %in% pat_list[[d]])
+    ts <- tabs[[d]][[y]][,sel]
+    return(ts)
+  })
+  names(s) <- station_year[[d]]
+  return(s)
+})
+
+names(tabs_varsel) <- basename(sdirs)[1:length(tabs_varsel)]
+
+```
+
+### check, whether all are there
+```{r, warning=FALSE, message=FALSE, eval=F}
+'%notin%' <- Negate('%in%')
+# which columns could not be matched? 
+pat_not_matched_tabs <- lapply(seq(tabs_varsel), function(d){ # for all different stations
+  s <- lapply(seq(tabs_varsel[[d]]), function(y){ # for all years available for this station
+    not_matched <- which(names(tabs_varsel[[d]][[y]])  %notin% pat_list[[d]])
+    return(pat_list[[d]][not_matched])
+  })
+  names(s) <- station_year[[d]]
+  return(s)
+})
+
+names(pat_not_matched_tabs) <- basename(sdirs)[1:length(tabs_varsel)]
+
+```
+
+All good except for Bull Pass East not having MRC_0_cm_deg_C (don't understand why)
+and a lot of missing data in 2019, also Don Juan Pond is missing data in 2019.
+
+
+Writing to a RDS file 
+
+```{r, warning=FALSE, message=FALSE}
+# saveRDS(tabs_varsel, here("../calib_valid/AWS/SoilStations/tabs_varsel.rds"))
+# tabs_varsel <- readRDS(here("../calib_valid/AWS/SoilStations/tabs_varsel.rds"))
+```
+
+### Match 
+```{r, warning=FALSE, message=FALSE, eval=F}
+library(dplyr)
+
+cols_per_station <- lapply(seq(tabs_varsel), function(d){
+  sapply(seq(tabs_varsel[[d]]), function(y){
+  ncol(tabs_varsel[[d]][[y]])
+})
+})
+
+names(cols_per_station) <- shortID 
+
+BP_one_missing <- do.call("rbind", tabs_varsel$BullPass[c(1,3:length(tabs_varsel$BullPass))])
+BPE_no_19 <- do.call("rbind", tabs_varsel$BullPassEast[1:7])
+DJP_no_19 <- do.call("rbind", tabs_varsel$DonJuanPond[1:8])
+
+BP_allyears <- bind_rows(BP_one_missing, tabs_varsel$BullPassEast[[2]])
+BPE_allyears <- bind_rows(BPE_no_19, tabs_varsel$BullPassEast[[8]])
+DJP_allyears <- bind_rows(DJP_no_19, tabs_varsel$DonJuanPond[[9]])
+GH_allyears <- do.call("rbind", tabs_varsel$GraniteHarbour)
+MP_allyears <- do.call("rbind", tabs_varsel$MarblePoint)
+MtF_allyears <- do.call("rbind", tabs_varsel$MtFlemming)
+VV_allyears <- do.call("rbind", tabs_varsel$VictoriaValley)
+
+
+stations <- list(BP_allyears, BPE_allyears, DJP_allyears, GH_allyears, 
+     MP_allyears, MtF_allyears, VV_allyears)
+
+names(stations) <- shortID
+# saveRDS(stations, here("../calib_valid/AWS/SoilStations/stations_before_unifying.rds"))
+```
+
+1. Keep BP, BPE and DJP together for relating soil RH to SMC
+2. One full version: kill Soil_Temp_2_cm_White_deg_C and Soil_Temp_2_cm_Black_deg_C as
+well as both SOIL_RH_% in BP. Then join all together and rename as in excel file: 
+```{r, eval=F, echo=F, message=F, warning=FALSE}
+stations$BP[,c(9,10,11,12)] <- NULL
+stations$BPE$"Air_Temp_deg_C...6" <- NULL
+stations$DJP$"Air_Temp_deg_C...6" <- NULL
+stations$MP[,6] <- NULL
+stations$BPE$Soil_Temp_2_cm_deg_C <- NULL
+stations$BPE$"Soil_RH_2_cm_%" <- NULL
+stations$BPE$`Relative_Humidity_%` <- NULL
+stations$DJP$`Soil_RH_2_cm_%` <- NULL
+stations$BP <- stations$BP[,1:20]
+
+# first Wind Direction_deg_True_N in 7, then Wind Speed in 8
+stations$BP <- stations$BP[,c(1:6,8,7,9:20)]
+stations$MP <- stations$MP[,c(1:6,8,7,9:20)]
+stations$VV <- stations$VV[,c(1:6,8,7,9:20)]
+
+nam <- lapply(seq(stations), function(d){
+  names(stations[[d]])
+})
+
+stationnames <- data.frame(do.call("cbind", nam))
+names(stationnames) <- shortID
+stationnames
+
+# new names: 
+newnam <- c(
+"ID",
+"YEAR",
+"HOUR",
+"DATE",
+"AirT",
+"SolarRad",
+"WindDir",
+"WindSpeed",
+"SoilT0_2",
+"SoilT5_7",
+"ER",
+"EI",
+"Temp",
+"ER_COR",
+"EI_COR",
+"SMC",
+"SAL",
+"COND",
+"COND_COR",
+"WAT_COND_COR")
+
+stations_eqal <- lapply(seq(stations), function(d){
+  names(stations[[d]]) <- newnam
+  return(stations[[d]])
+})
+
+# saveRDS(stations_eqal, here("../calib_valid/AWS/SoilStations/stations_allyears.rds"))
+
+all_useful_var <- read_xlsx(here("../calib_valid/AWS/SoilStations/new_vs_old_colnames.xlsx"),sheet=1)
+knitr::kable(head(all_useful_var))
+
+var_together <- read_xlsx(here("../calib_valid/AWS/SoilStations/new_vs_old_colnames.xlsx"),sheet=2)
+knitr::kable(head(var_together))
+```
+
+
+
+
+```{r, eval=F}
+stations <- readRDS(here("../calib_valid/AWS/SoilStations/stations_allyears.rds"))
+nam <- lapply(seq(stations), function(d){
+  names(stations[[d]])
+})
+allstat <- do.call("rbind", stations)
+
+# saveRDS(allstat, here("../calib_valid/AWS/SoilStations/all_AWSS_all_years.rds"))
+
+```
+
+# The head of the final result
+```{r}
+saws <- readRDS(here("../calib_valid/AWS/SoilStations/all_AWSS_all_years.rds"))
+knitr::kable(head(saws))
+```
+
+# observations per climate station
+```{r}
+table(saws$ID)
+```
+
+# log SMC 
+```{r}
+hist(log(saws$SMC), 
+     breaks=60,
+     main="log SMC")
+```
+

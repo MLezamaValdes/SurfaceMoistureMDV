@@ -1,0 +1,711 @@
+---
+title: "AWS_SoilStations"
+author: "Maite"
+date: "2 12 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=F, warning=FALSE, message=FALSE}
+library(sf)
+library(mapview)
+library(ggplot2)
+library(padr)
+library(gridExtra)
+library(grid)
+library(colorspace)
+library(here)
+library(dplyr)
+library(lubridate)
+library(readxl)
+library(raster)
+```
+
+# Automatic Weather Station Data
+### Met Stations can't be used, because Relative Humidity is measured at 3m height. See Met_stations.Rmd for more info. 
+
+### Antarctica Soil Climate Research Stations 
+Data can be found [here](https://www.nrcs.usda.gov/wps/portal/nrcs/detail/soils/home/?cid=nrcs142p2_053772). 
+There are 9 of them, excluding Minna Bluff and Scott's Base there are: 
+
+1. Bull Pass
+
+established in January of 1999, Wright Valley, 150m elevation, measures  soil temperature to a depth of 120 cm, soil water content (2, 20, 30, 40, 50, and 120 cm depths), air temperature, relative humidity, solar radiation, and wind (speed and direction). Measurements are made at 20-minute intervals and averaged and recorded every hour.
+
+2. Bull Pass East 
+
+established in January of 2012. The station is located in a bowl shaped ridge just east of Bull Pass overlooking the Wright valley in Antarctica. The elevation is about 835 m (2740 ft). This station monitors soil temperature to a depth of 120 cm, soil water content (2, 10, and 25 cm depths), air temperature, relative humidity, soil pore humidity (2 and 10 cm depths), solar radiation, and wind (speed and direction). Measurements are made at 20-minute intervals and averaged and recorded every hour.
+
+3. Don Juan Pond
+
+established in January of 2011. The station is located on a ridge about 700 m (2296 ft) above Don Juan Pond at the upper end of the Wright valley in Antarctica. This station monitors soil temperature to a depth of 120 cm, soil water content (2, 10, and 25 cm depths), air temperature, relative humidity, soil pore humidity (2 and 10 cm depths), solar radiation, and wind (speed and direction). Measurements are made at 20-minute intervals and averaged and recorded every hour.
+
+4. Granite Harbour
+
+established in January of 2003 and is the northern most coastal station. It borders the Ross Sea and is 195 km (120 miles) north of the Minna Bluff station. The elevation is about 4.5 m (15ft). This station monitors soil temperature to a depth of 90 cm, soil water content (2, 5, 15, 25, 45, and 75 cm depths), air temperature, relative humidity, solar radiation, and wind (speed and direction). Measurements are made at 20-minute intervals and averaged and recorded every hour.
+
+5. Marble Point
+
+established in January of 1999 and is located on the coast bordering the Ross Sea. The elevation is 50 m (165 ft). This station monitors soil temperature to a depth of 120 cm, soil water content (2, 20, 50, and 80 cm depths), air temperature, relative humidity, solar radiation, and wind (speed and direction). Measurements are made at 20-minute intervals and averaged and recorded every hour.
+
+6. Mt. Fleming
+
+established in January of 2002 and is the highest at an elevation of 1,700 m (5,600 ft). It was established on Mt. Fleming, at the head of the Wright Valley and adjacent to the polar plateau. The Mt. Fleming station is also located on patterned ground. This station monitors soil temperature to a depth of 60 cm, soil water content (7.5, 15, and 30 cm depths), air temperature, relative humidity, solar radiation, and wind (speed and direction). Measurements are made at 20-minute intervals and averaged and recorded every hour.
+
+7. Victoria Valley
+
+established in January of 1999 and is one of two stations located in the Dry Valleys. The Victoria Valley station is at an elevation of 410 m (1,350 ft) in an area of patterned ground. This station monitors soil temperature to a depth of 120 cm, soil water content (10, 33, 83, 91, and 106 cm depths), air temperature, relative humidity, solar radiation, and wind (speed and direction). Measurements are made at 20-minute intervals and averaged and recorded every hour.
+
+
+The following map contains information on the location of the Soil Climate Stations with their year of establishment. All of them gather data until 2019. Moreover, the iButton locations are depicted as small points. 
+
+
+```{r, echo=F, warning=FALSE, message=FALSE}
+# ggplot colors come from package scales 
+# scales::show_col(hue_pal()(9))
+
+# make some colors to show different calibration and validation sources
+library(scales)
+cols <- hue_pal()(13)
+Scols <- cols[c(2,3,4,5,7,9,11)]
+icols <- cols[c(1,6,8,10,12,13)]
+```
+
+### Visualization of data acquisition locations and time frames from iButton and AWS
+
+```{r, echo=F, warning=FALSE, message=FALSE}
+loc_SoilS <- read.csv2(here("../calib_valid/AWS/SoilStations/Soil_Station_locations.csv"))
+loc_SoilS <- loc_SoilS[1:7,]
+loc_SoilS$Sread <- as.numeric(loc_SoilS$Sread)
+loc_SoilS$Eread <- as.numeric(loc_SoilS$Eread)
+loc_SoilS$Nread <- loc_SoilS$Sread*(-1)
+
+
+SoilS = st_as_sf(loc_SoilS, coords = c("Eread","Nread"), remove = FALSE,
+              crs=4326)
+
+SoilS <- SoilS[order(SoilS$station),]
+
+mapview(SoilS, label="station", map.types = "Esri.WorldImagery",
+        cex=8, zcol="station", col.regions=Scols)+
+   mapview(aoi, map.types = c("Esri.WorldImagery"),
+                 alpha.regions = 0,
+                 color = 'chartreuse3',
+                 lwd=3,legend=FALSE)+
+  mapview(unique_locations,label="Valley",zcol="Valley",
+          cex=3, 
+          col.regions = icols)
+  
+```
+
+
+
+```{r, warning=FALSE, message=FALSE}
+
+timeframe_per_valley <- lapply(seq(valleys), function(v){
+    iBut_Vlly <- iB_valley[[which(names(iB_valley)==valleys[v])]]
+    return(as.character(c(min(iBut_Vlly$time), max(iBut_Vlly$time))))
+})
+
+names(timeframe_per_valley) <- valleys
+
+tf_val <- data.frame(do.call("rbind", timeframe_per_valley))
+names(tf_val) <- c("start","end")
+tf_val$valley <- rownames(tf_val)
+tf_val <- tidyr::gather(tf_val, startend, time, -valley)
+tf_val$time <- as.POSIXct(tf_val$time, tz="Pacific/Auckland")
+
+soilfr <- data.frame(paste0(SoilS$station, "_Soil_Stat"), rep("start",7), 
+                     as.POSIXct(paste0(SoilS$from, "-01-01 00:01"), format="%Y-%m-%d %H:%M"))
+soilto <- data.frame(paste0(SoilS$station, "_Soil_Stat"), rep("end",7), 
+                     as.POSIXct(paste0(SoilS$to, "-12-31 00:01"), format="%Y-%m-%d %H:%M"))
+
+names(soilfr) <- c("valley", "startend","time")
+names(soilto) <- c("valley", "startend","time")
+
+tf_val <- rbind(tf_val, soilfr, soilto)
+tf_val$valley <- as.factor(tf_val$valley)
+
+ggplot(tf_val, aes(x=time, y=valley, color=valley))+
+  geom_line(size=3)+
+  scale_color_hue(cols)+
+  scale_x_datetime(min(tf_val$time), min(tf_val$time), "1 year")+
+  ggtitle("SoilStation and iButton deployment timeframes per Valley")+
+  theme_minimal()+theme(legend.position = "none",
+                        axis.title.y = element_blank(),
+                        axis.text.y = element_text(size=12, face="bold"),
+                        plot.title = element_text(size = 16, face="bold"),
+                        axis.title.x = element_blank(),
+                        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+## Read Soil Station data
+
+Files were read and non-empty columns retained. A column name from the 
+first three lines of the excel files was created. Finally, the so created
+column names were matched to the pattern for the following variables of 
+interest: 
+
+
+ID, 
+Year, 
+Hour, 
+Date
+Air Temp (°C, 1.6m)
+Solar Radiation (W/m²), 3m
+Wind Speed (m/s), 3m
+Wind Direction (azimuth), 3m
+
+Soil Temp (°C) Surface under white rock
+Soil Temp (°C) Surface under black rock
+
+Soil RH (%) 5cm
+Soil RH (%) 15cm
+
+MRC Soil Temp °C 0 in 
+MRC Soil Temp °C 3 in 7,6cm
+
+Soil 2cm: 
+ER	unitless	Real dielectric constant
+EI	unitless	Imaginary dielectric constant
+Temp	°C	Temperature
+ER_COR	unitless	Temperature corrected ER
+EI_COR	unitless	Temperature corrected EI
+WATER	wfv	Soil moisture
+SALINITY	g NaCl/L	Soil salinity
+SOIL_COND	S/m	Soil conductivity
+SOIL_COND_COR	S/m	Temp corrected soil conductivity
+WATER_CON_COR	S/m	Temp corrected conductivity of the water in the soil
+
+
+```{r, warning=FALSE, message=FALSE}
+sdirs <- list.dirs(here("../calib_valid/AWS/SoilStations/"))[-1]
+
+# PATTERNS FOR SUBSETTING THE DATASETS 
+# BULL PASS     
+pat_BP <- c("ID","YEAR_NA_NA", "HOUR_NA_NA", "DATE_NA_NA",
+         "Air_Temp_deg_C", "Solar_Radiation_W/m2",
+         "Wind_Speed_m/s", "Wind_Direction_deg_True_N",
+         "Soil_Temp_2_cm_White_deg_C", "Soil_Temp_2_cm_Black_deg_C",
+         "MRC_0_cm_deg_C", "MRC_7.5_cm_deg_C", "SOIL_RH_%", "SOIL_RH_%", 
+         "ER_2_cm,_1_NA", "EI_2_cm,_1_NA","TEMP_2_cm,_1_deg_C",
+         "ER_COR_2_cm,_1_NA","EI_COR_2_cm,_1_NA","WATER_2_cm,_1_wfv" ,
+         "SALINITY_2_cm,_1_g_NaCl/L",   "SOIL_COND_2_cm,_1_S/m","SOIL_COND_COR_2_cm,_1_S/m" ,
+         "WATER_CON_COR_2_cm,_1_S/m")
+
+# BULL PASS EAST 
+# don't exist: "Soil_Temp_2_cm_White_deg_C", "Soil_Temp_2_cm_Black_deg_C", 
+# MRC_5.5_cm_deg_C instead of 7.5cm 
+# instead of "SOIL_RH_%" there is "Soil_RH_2cm_%" 
+# Bull Pass East from 2019 is mostly empty 
+pat_BPE <- c("ID","YEAR_NA_NA", "HOUR_NA_NA", "DATE_NA_NA",
+         "Air_Temp_deg_C", "Solar_Radiation_W/m2","Relative_Humidity_%",
+         "Wind_Speed_m/s", "Wind_Direction_deg_True_N",
+         "MRC_0_cm_deg_C", "MRC_5_cm_deg_C", 
+         "Soil_RH_2_cm_%","Soil_Temp_2_cm_deg_C",
+         "ER_2_cm,_1_NA", "EI_2_cm,_1_NA","TEMP_2_cm,_1_deg_C",
+         "ER_COR_2_cm,_1_NA","EI_COR_2_cm,_1_NA","WATER_2_cm,_1_wfv" ,
+         "SALINITY_2_cm,_1_g_NaCl/L",   "SOIL_COND_2_cm,_1_S/m","SOIL_COND_COR_2_cm,_1_S/m" ,
+         "WATER_CON_COR_2_cm,_1_S/m")
+
+# DON JUAN POND
+# don't exist: "Soil_Temp_2_cm_White_deg_C", "Soil_Temp_2_cm_Black_deg_C", 
+# MRC_5_cm_deg_C instead of 7.5cm 
+# instead of "SOIL_RH_%", there's "Soil_RH_2_cm_%" 
+# 2019: data missing 
+pat_DJP <- c("ID","YEAR_NA_NA", "HOUR_NA_NA", "DATE_NA_NA",
+         "Air_Temp_deg_C", "Solar_Radiation_W/m2",
+         "Wind_Speed_m/s", "Wind_Direction_deg_True_N",
+         "MRC_0_cm_deg_C", "MRC_5_cm_deg_C", "Soil_RH_2_cm_%", 
+         "ER_2_cm,_1_NA", "EI_2_cm,_1_NA","TEMP_2_cm,_1_deg_C",
+         "ER_COR_2_cm,_1_NA","EI_COR_2_cm,_1_NA","WATER_2_cm,_1_wfv" ,
+         "SALINITY_2_cm,_1_g_NaCl/L",   "SOIL_COND_2_cm,_1_S/m","SOIL_COND_COR_2_cm,_1_S/m" ,
+         "WATER_CON_COR_2_cm,_1_S/m")
+# GRANITE HARBOUR
+# don't exist: "Soil_Temp_2_cm_White_deg_C", "Soil_Temp_2_cm_Black_deg_C", 
+# Air_Temp,_1_deg_C 
+# MRC MRC_5.5_cm_deg_C instead of 7.5 or 5
+# No soil RH
+# ER,, EI, etc 2.5cm instead of 2cm 
+pat_GH <- c("ID","YEAR_NA_NA", "HOUR_NA_NA", "DATE_NA_NA",
+         "Air_Temp,_1_deg_C", "Solar_Radiation_w/m2",
+         "Wind_Speed_m/s", "Wind_Direction_deg_True_N",
+         "MRC_0_cm_deg_C", "MRC_5.5_cm_deg_C", 
+         "ER_2.5_cm_NA","EI_2.5_cm_NA","TEMP_2.5_cm_deg_C","ER_COR_2.5_cm_NA",
+         "EI_COR_2.5_cm_NA","WATER_2.5_cm_wfv","SALINITY_2.5_cm_g_NaCl/L",
+         "SOIL_COND_2.5_cm_S/m","SOIL_COND_COR_2.5_cm_S/m","WATER_CON_COR_2.5_cm_S/m" )
+
+# MARBLE POINT
+# don't exist: "Soil_Temp_2_cm_White_deg_C", "Soil_Temp_2_cm_Black_deg_C", 
+# "SOIL_RH_%" doesn't exist, instead: 
+pat_MP <-  c("ID","YEAR_NA_NA", "HOUR_NA_NA", "DATE_NA_NA",
+         "Air_Temp_deg_C", "Solar_Radiation_W/m2",
+         "Wind_Speed_m/s", "Wind_Direction_deg_True_N",
+         "MRC_0_cm_deg_C", "MRC_7.5_cm_deg_C", 
+         "ER_2_cm,_1_NA", "EI_2_cm,_1_NA","TEMP_2_cm,_1_deg_C",
+         "ER_COR_2_cm,_1_NA","EI_COR_2_cm,_1_NA","WATER_2_cm,_1_wfv" ,
+         "SALINITY_2_cm,_1_g_NaCl/L",   "SOIL_COND_2_cm,_1_S/m","SOIL_COND_COR_2_cm,_1_S/m" ,
+         "WATER_CON_COR_2_cm,_1_S/m")
+
+# MOUNT FLEMMING 
+# don't exist: "Soil_Temp_2_cm_White_deg_C", "Soil_Temp_2_cm_Black_deg_C"
+# no MRC, instead  "Soil_Temp_Poly2cm_deg_C"     "Soil_Temp_Poly7.5cm_deg_C"
+# no SOIL_RH_%
+pat_MtF <- c("ID","YEAR_NA_NA", "HOUR_NA_NA", "DATE_NA_NA",
+         "Air_Temp_deg_C", "Solar_Radiation_W/m2",
+         "Wind_Speed_m/s", "Wind_Direction_deg_True_N",
+          "Soil_Temp_Poly2cm_deg_C","Soil_Temp_Poly7.5cm_deg_C",
+         "ER_7.5_cm,_1_NA","EI_7.5_cm,_1_NA","TEMP_7.5_cm,_1_deg_C",
+         "ER_COR_7.5_cm,_1_NA","EI_COR_7.5_cm,_1_NA", "WATER_7.5_cm,_1_wfv",   
+         "SALINITY_7.5_cm,_1_g_NaCl/L", "SOIL_COND_7.5_cm,_1_S/m",
+         "SOIL_COND_COR_7.5_cm,_1_S/m" ,"WATER_CON_COR_7.5_cm,_1_S/m")
+
+# don't exist: "Soil_Temp_2_cm_White_deg_C", "Soil_Temp_2_cm_Black_deg_C"
+# no soil RH
+# 
+pat_VV <- c("ID","YEAR_NA_NA", "HOUR_NA_NA", "DATE_NA_NA",
+         "Air_Temp_deg_C", "Solar_Radiation_w/m2",
+         "Wind_Speed_m/s", "Wind_Direction_deg_True_N",
+         "MRC_0_cm_deg_C", "MRC_7.5_cm_deg_C", 
+         "ER_3_cm,_2_NA","EI_3_cm,_2_NA","TEMP_3_cm,_2_deg_C","ER_COR_3_cm,_2_NA",      
+         "EI_COR_3_cm,_2_NA","WATER_3_cm,_2_wfv","SALINITY_3_cm,_2_g_NaCl/L", 
+         "SOIL_COND_3_cm,_2_S/m","SOIL_COND_COR_3_cm,_2_S/m" , "WATER_CON_COR_3_cm,_2_S/m")
+
+
+pat_list <- list(pat_BP, pat_BPE, pat_DJP, pat_GH, pat_MP, pat_MtF, pat_VV)
+shortID <- list("BP", "BPE", "DJP", "GH", "MP", "MtF", "VV")
+
+```
+
+# Just for testing the patterns
+```{r, warning=FALSE, message=FALSE, eval=F}
+checktabs <- lapply(seq(sdirs), function(d){ # for all different stations
+  print(paste0("d= ",d))
+  f <- list.files(sdirs[d], full.names=T,pattern=".xls")
+  stat_year <- lapply(seq(length(f)), function(y){ # for all years available for this station
+  # loop through all of the files
+      print(y)
+      names_df <- read_excel(f[y],
+           col_names = F)
+      # get rid of empty columns
+      any(is.na(names_df[5,]))
+      
+      isnadf <- is.na(names_df[200:216,])
+      full_cols <- which(colSums(isnadf)!=16)
+      
+      pastenams <- apply(names_df[1:3,], 2, paste , collapse = "_" )
+      pastenams <- gsub(" ", "_", pastenams)
+      pastenams <- pastenams[full_cols]
+      
+      tab <- read_excel(f[y], .name_repair = "unique",
+                 skip=3)
+      
+      isnatabdf <- is.na(tab[200:216,])
+      full_cols_tab <- which(colSums(isnatabdf)!=16)
+      tab <- tab[,full_cols_tab]
+      ncol(tab)
+      length(pastenams)
+      
+      names(tab) <- pastenams
+      
+      names(tab)[1] <- "ID"
+      tab$ID <- shortID[[d]]
+      
+      return(tab[1:10,])
+  })
+})
+
+names(checktabs) <- basename(sdirs)[1:length(checktabs)]
+# saveRDS(checktabs, here("../calib_valid/AWS/SoilStations/checktabs.rds"))
+```
+
+Finding out what's going wrong: 
+```{r, warning=FALSE, message=FALSE, eval=F}
+
+# which variables in pat are in checktab names? 
+check_varsel <- lapply(seq(checktabs), function(d){ # for all different stations
+  sapply(seq(checktabs[[d]]), function(y){ # for all years available for this station
+    sel <- which(names(checktabs[[d]][[y]]) %in% pat_list[[d]])
+    length(sel)
+    return(length(sel))
+  })
+})
+
+names(check_varsel) <- basename(sdirs)[1:length(checktabs)]
+check_varsel
+
+# different naming for different stations? 
+
+'%notin%' <- Negate('%in%')
+
+# which columns could not be matched? 
+pat_not_matched <- lapply(seq(checktabs), function(d){ # for all different stations
+  s <- lapply(seq(checktabs[[d]]), function(y){ # for all years available for this station
+    not_matched <- which(pat_list[[d]] %notin% names(checktabs[[d]][[y]]))
+    return(pat[not_matched])
+  })
+  names(s) <- station_year[[d]]
+  return(s)
+})
+
+names(pat_not_matched) <- basename(sdirs)[1:length(checktabs)]
+
+
+# look into names per station 
+dy_names <- lapply(seq(checktabs), function(d){ # for all different stations
+  s <- sapply(seq(checktabs[[d]]), function(y){ # for all years available for this station
+    names(checktabs[[d]][[y]])
+  })
+  names(s) <- station_year[[d]]
+  return(s)
+})
+names(dy_names) <- basename(sdirs)[1:length(checktabs)]
+
+
+```
+
+
+```{r, warning=FALSE, message=FALSE, eval=F}
+# BULL PASS
+check_varsel$BullPass # to see whether there are differences over the years
+pat_not_matched$BullPass # all good
+# dy_names$BullPass$'2012' # all names in respective climate station
+
+# BULL PASS EAST 
+check_varsel$BullPassEast # to see whether there are differences over the years
+pat_not_matched$BullPassEast # which in pattern could not be matched
+# SOLVE: WHY IS MRC_0_cm_deg_C NOT MATCHED ALTHOUGH ITS IN PATTERN AND FILENAMES?????
+dy_names$BullPassEast$'2012' # all names in respective climate station
+
+# DON JUAN POND
+check_varsel$DonJuanPond # to see whether there are differences over the years
+pat_not_matched$DonJuanPond # which in pattern could not be matched
+# dy_names$DonJuanPond$'2012' # all names in respective climate station
+# adapt pattern to match the station using the data labels word-document 
+
+# GRANITE HARBOUR
+check_varsel$GraniteHarbour # to see whether there are differences over the years
+pat_not_matched$GraniteHarbour # which in pattern could not be matched
+# all good
+# dy_names$GraniteHarbour$'2012' # all names in respective climate station
+
+# MARBLE POINT
+check_varsel$MarblePoint # to see whether there are differences over the years
+pat_not_matched$MarblePoint # which in pattern could not be matched
+# dy_names$MarblePoint$'2012' # all names in respective climate station
+
+# MtFlemming
+check_varsel$MtFlemming # to see whether there are differences over the years
+pat_not_matched$MtFlemming # which in pattern could not be matched
+# dy_names$MtFlemming$'2012' # all names in respective climate station
+
+# vICTORIA VALLEY
+check_varsel$VictoriaValley # to see whether there are differences over the years
+pat_not_matched$VictoriaValley # which in pattern could not be matched
+# dy_names$VictoriaValley$'2012' # all names in respective climate station
+
+
+```
+
+
+# Now reading in the actual datasets and saving as RMD 
+
+```{r, warning=FALSE, message=FALSE}
+
+tabs <- lapply(seq(sdirs), function(d){ # for all different stations
+  print(paste0("d= ",d))
+  f <- list.files(sdirs[d], full.names=T,pattern=".xls")
+  stat_year <- lapply(seq(length(f)), function(y){ # for all years available for this station
+  # loop through all of the files
+      print(y)
+      names_df <- read_excel(f[y],
+           col_names = F)
+      # get rid of empty columns
+      any(is.na(names_df[5,]))
+      
+      isnadf <- is.na(names_df[200:216,])
+      full_cols <- which(colSums(isnadf)!=16)
+      
+      pastenams <- apply(names_df[1:3,], 2, paste , collapse = "_" )
+      pastenams <- gsub(" ", "_", pastenams)
+      pastenams <- pastenams[full_cols]
+      
+      tab <- read_excel(f[y], .name_repair = "unique",
+                 skip=3)
+      
+      isnatabdf <- is.na(tab[200:216,])
+      full_cols_tab <- which(colSums(isnatabdf)!=16)
+      tab <- tab[,full_cols_tab]
+      ncol(tab)
+      length(pastenams)
+      
+      names(tab) <- pastenams
+      
+      names(tab)[1] <- "ID"
+      tab$ID <- shortID[[d]]
+      
+      return(tab)
+  })
+})
+
+
+names(tabs) <- basename(sdirs)
+# saveRDS(tabs, here("../calib_valid/AWS/SoilStations/all_SoilStation_data.rds"))
+
+
+```
+
+Subsetting by the pattern
+```{r, warning=FALSE, message=FALSE}
+# get year corresponding to y per station
+station_year <- lapply(seq(tabs), function(d){ # for all different stations
+  sapply(seq(tabs[[d]]), function(y){ # for all years available for this station
+    tabs[[d]][[y]]$YEAR_NA_NA[1]
+  })
+})
+
+# subset by name
+tabs_varsel <- lapply(seq(tabs), function(d){ # for all different stations
+  s <- lapply(seq(tabs[[d]]), function(y){ # for all years available for this station
+    sel <- which(names(tabs[[d]][[y]]) %in% pat_list[[d]])
+    ts <- tabs[[d]][[y]][,sel]
+    return(ts)
+  })
+  names(s) <- station_year[[d]]
+  return(s)
+})
+
+names(tabs_varsel) <- basename(sdirs)[1:length(tabs_varsel)]
+
+```
+
+### check, whether all are there
+```{r, warning=FALSE, message=FALSE}
+'%notin%' <- Negate('%in%')
+# which columns could not be matched? 
+pat_not_matched_tabs <- lapply(seq(tabs_varsel), function(d){ # for all different stations
+  s <- lapply(seq(tabs_varsel[[d]]), function(y){ # for all years available for this station
+    not_matched <- which(names(tabs_varsel[[d]][[y]])  %notin% pat_list[[d]])
+    return(pat_list[[d]][not_matched])
+  })
+  names(s) <- station_year[[d]]
+  return(s)
+})
+
+names(pat_not_matched_tabs) <- basename(sdirs)[1:length(tabs_varsel)]
+
+```
+
+All good except for Bull Pass East not having MRC_0_cm_deg_C (don't understand why)
+and a lot of missing data in 2019, also Don Juan Pond is missing data in 2019.
+
+
+Writing to a RDS file 
+
+```{r, warning=FALSE, message=FALSE}
+# saveRDS(tabs_varsel, here("../calib_valid/AWS/SoilStations/tabs_varsel.rds"))
+```
+
+# Match 
+```{r, warning=FALSE, message=FALSE}
+library(dplyr)
+
+cols_per_station <- lapply(seq(tabs_varsel), function(d){
+  sapply(seq(tabs_varsel[[d]]), function(y){
+  ncol(tabs_varsel[[d]][[y]])
+})
+})
+
+names(cols_per_station) <- shortID 
+
+BP_one_missing <- do.call("rbind", tabs_varsel$BullPass[c(1,3:length(tabs_varsel$BullPass))])
+BPE_no_19 <- do.call("rbind", tabs_varsel$BullPassEast[1:7])
+DJP_no_19 <- do.call("rbind", tabs_varsel$DonJuanPond[1:8])
+
+BP_allyears <- bind_rows(BP_one_missing, tabs_varsel$BullPassEast[[2]])
+BPE_allyears <- bind_rows(BPE_no_19, tabs_varsel$BullPassEast[[8]])
+DJP_allyears <- bind_rows(DJP_no_19, tabs_varsel$DonJuanPond[[9]])
+GH_allyears <- do.call("rbind", tabs_varsel$GraniteHarbour)
+MP_allyears <- do.call("rbind", tabs_varsel$MarblePoint)
+MtF_allyears <- do.call("rbind", tabs_varsel$MtFlemming)
+VV_allyears <- do.call("rbind", tabs_varsel$VictoriaValley)
+
+
+stations <- list(BP_allyears, BPE_allyears, DJP_allyears, GH_allyears, 
+     MP_allyears, MtF_allyears, VV_allyears)
+
+names(stations) <- shortID
+```
+
+1. Keep BP, BPE and DJP together for relating soil RH to SMC
+2. One full version: kill Soil_Temp_2_cm_White_deg_C and Soil_Temp_2_cm_Black_deg_C as
+well as both SOIL_RH_% in BP. Then join all together and rename as in excel file: 
+```{r}
+stations$BP[,c(9,10,11,12)] <- NULL
+stations$BPE$"Air_Temp_deg_C...6" <- NULL
+stations$DJP$"Air_Temp_deg_C...6" <- NULL
+stations$MP[,6] <- NULL
+stations$BPE$Soil_Temp_2_cm_deg_C <- NULL
+stations$BPE$"Soil_RH_2_cm_%" <- NULL
+stations$BPE$`Relative_Humidity_%` <- NULL
+stations$DJP$`Soil_RH_2_cm_%` <- NULL
+stations$BP <- stations$BP[,1:20]
+
+# first Wind Direction_deg_True_N in 7, then Wind Speed in 8
+stations$BP <- stations$BP[,c(1:6,8,7,9:20)]
+stations$MP <- stations$MP[,c(1:6,8,7,9:20)]
+stations$VV <- stations$VV[,c(1:6,8,7,9:20)]
+
+nam <- lapply(seq(stations), function(d){
+  names(stations[[d]])
+})
+
+stationnames <- data.frame(do.call("cbind", nam))
+names(stationnames) <- shortID
+stationnames
+
+# new names: 
+newnam <- c(
+"ID",
+"YEAR",
+"HOUR",
+"DATE",
+"AirT",
+"SolarRad",
+"WindDir",
+"WindSpeed",
+"SoilT0_2",
+"SoilT5_7",
+"ER",
+"EI",
+"Temp",
+"ER_COR",
+"EI_COR",
+"SMC",
+"SAL",
+"COND",
+"COND_COR",
+"WAT_COND_COR")
+
+stations_eqal <- lapply(seq(stations), function(d){
+  names(stations[[d]]) <- newnam
+  return(stations[[d]])
+})
+
+# saveRDS(stations_eqal, here("../calib_valid/AWS/SoilStations/stations_allyears.rds"))
+
+all_useful_var <- read_xlsx(here("../calib_valid/AWS/SoilStations/new_vs_old_colnames.xlsx"),sheet=1)
+knitr::kable(head(all_useful_var))
+
+var_together <- read_xlsx(here("../calib_valid/AWS/SoilStations/new_vs_old_colnames.xlsx"),sheet=2)
+knitr::kable(head(var_together))
+```
+
+
+
+
+```{r}
+stations <- readRDS(here("../calib_valid/AWS/SoilStations/stations_allyears.rds"))
+nam <- lapply(seq(stations), function(d){
+  names(stations[[d]])
+})
+allstat <- do.call("rbind", stations)
+
+# saveRDS(allstat, here("../calib_valid/AWS/SoilStations/all_AWSS_all_years.rds"))
+
+```
+
+
+# descriptive data
+```{r}
+summary(allstat)
+knitr::kable(head(allstat))
+
+
+hist(allstat$SMC, breaks=300)
+boxplot(allstat$SMC)
+
+tail(sort(allstat$SMC))
+
+ol <- which(allstat$SMC > 5000,)
+
+
+allstat[ol,]
+```
+
+```{r, warning=FALSE, message=FALSE}
+  
+# make an overview of names to find out which are out of line 
+nams <- lapply(seq(length(f)), function(y){
+    names(stat_year[[y]])
+})
+namdf <- do.call(rbind.data.frame, nams)
+names(namdf) <- paste0("V", seq(names(namdf)))
+# View(namdf)
+names(stat_year) <- sapply(seq(stat_year), function(i){ as.character(stat_year[[i]][1,2]) })
+
+# sort out 2009
+stat_year_clean <- stat_year[names(stat_year)!="2009"]
+# length(stat_year_clean)
+nams <- lapply(seq(length(stat_year_clean)), function(y){
+    names(stat_year_clean[[y]])
+})
+namdf <- do.call(rbind.data.frame, nams)
+names(namdf) <- paste0("V", seq(names(namdf)))
+# View(namdf)
+# any(namdf[1,] != namdf[4,])
+
+bullpass <- do.call("rbind.data.frame", stat_year_clean)
+
+names(bullpass) <- gsub(",", "_", names(bullpass))
+
+names(bullpass)[104]
+names(bullpass)[which(names(bullpass)=="SOIL_RH_%")[1]] <- "SOIL_RH_%_1"
+names(bullpass)[which(names(bullpass)=="SOIL_ELECT_RES")[1]] <- "SOIL_ELECT_RES_1"
+
+# filling the gaps in incomplete datetime variables so that no 
+#data are actually no data in the plot
+bullpass <- pad(bullpass) 
+
+bullpass$useable <- NA
+bullpass$useable[bullpass$Soil_Temp_2_cm_White_deg_C < (-1)] <- 0
+bullpass$useable <- as.factor(bullpass$useable)
+```
+
+
+```{r, warning=FALSE, message=FALSE}
+
+prh <- ggplot(bullpass, aes(DATE_NA_NA, WATER_2_cm__1_wfv))+
+  geom_point(size=0.5)+
+  geom_line()+
+  ggtitle("Relative Humidity")+
+  theme_minimal()
+pst <- ggplot(bullpass, aes(DATE_NA_NA, Soil_Temp_2_cm_White_deg_C))+
+  geom_point(size=0.5)+
+  geom_line()+
+  geom_hline(yintercept = -1, lty="dashed")+
+  ggtitle("Soil temperature at surface level")+
+  theme_minimal()
+
+gridExtra::grid.arrange(prh,pst)
+
+
+prh <- ggplot(bullpass, aes(DATE_NA_NA, WATER_2_cm__1_wfv, color=useable))+
+  geom_point(size=0.5)+
+  scale_color_manual(values=c("#e1e2e6","#0d0d0c"))+
+  ggtitle("Relative Humidity")+
+  theme_minimal()
+pst <- ggplot(bullpass, aes(DATE_NA_NA, Soil_Temp_2_cm_White_deg_C, color=useable))+
+  geom_point(size=0.5)+
+  geom_hline(yintercept = -1, lty="dashed")+
+  scale_color_manual(values=c("#e1e2e6","#0d0d0c"))+
+  ggtitle("Soil temperature at surface level")+
+  theme_minimal()
+
+gridExtra::grid.arrange(prh,pst)
+```
+

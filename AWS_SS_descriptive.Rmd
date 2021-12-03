@@ -1,0 +1,247 @@
+---
+title: "Soil AWS descriptive"
+author: "Maite"
+date: "3 12 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE, message=F, warning=F}
+knitr::opts_chunk$set(echo = FALSE, message=F, warning=F)
+```
+
+```{r}
+library(here)
+library(readxl)
+library(kableExtra)
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+```
+
+# Dataset for all stations
+
+```{r}
+saws <- readRDS(here("../calib_valid/AWS/SoilStations/all_AWSS_all_years.rds"))
+
+var_together <- data.frame(read_xlsx(here("../calib_valid/AWS/SoilStations/new_vs_old_colnames.xlsx"),
+                                     sheet=2))
+
+kbl(var_together[,c(1:3)],
+    caption="All variables the stations have in common") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = F, 
+                position = "left")
+```
+
+
+```{r}
+summary(saws)
+# knitr::kable(head(saws))
+
+kbl(head(saws)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                full_width = F, 
+                position = "left")
+
+
+hist(log(saws$SMC), breaks=60)
+tail(sort(saws$SMC))
+ol <- which(saws$SMC > 5000,)
+# getting rid of those outliers
+saws <- saws[-ol, ]
+```
+
+
+# Dataset to check for relation of RH and SMC
+```{r}
+all_useful_var <- data.frame(read_xlsx(here("../calib_valid/AWS/SoilStations/new_vs_old_colnames.xlsx"),
+                                       sheet=1))
+
+kbl(all_useful_var,
+    caption="All useful variables") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = F, 
+                position = "left",
+                font_size = 9)
+```
+
+Only possible to look into BP and BPE, DJP also has a soil moisture water 
+measurement at 2cm height, but it is only 0 and in a few cases we've got crazy outliers.. 
+doesn't really make sense.
+```{r}
+stations <- readRDS(here("../calib_valid/AWS/SoilStations/stations_before_unifying.rds"))
+
+srh <- list(BP=stations$BP,
+     BPE=stations$BPE)
+
+lapply(seq(srh), function(s){
+  print(s)
+      if(s==1){
+              rhT <- data.frame(RH=srh[[s]]$`Soil_RH_2_cm_%`,
+                          SMC=srh[[s]]$`WATER_2_cm,_1_wfv`,
+                          Temp=srh[[s]]$Soil_Temp_2_cm_deg_C, 
+                          date=srh[[s]]$DATE_NA_NA)
+      } else if (s==2){
+              rhT <- data.frame(RH=srh[[s]]$`Soil_RH_2_cm_%`,
+                  SMC=srh[[s]]$`WATER_2_cm,_1_wfv`,
+                  Temp=srh[[s]]$Soil_Temp_2_cm_deg_C, 
+                  date=srh[[s]]$DATE_NA_NA)
+      } 
+      rhT$Temp[rhT$Temp=="NAN"] <- NA
+      rhT$Temp <- as.numeric(rhT$Temp)
+      
+      rhT$RH[rhT$RH == -100] <- NA # assuming this means no data 
+      
+      rhT <- rhT[complete.cases(rhT),]
+      
+      rhT$log_SMC_1 <- log(rhT$SMC+1)
+
+      scaleFactor <-  max(rhT$RH) / max(rhT$log_SMC_1)
+      scaleFactorT <- max(rhT$RH) / max(rhT$Temp)
+      
+      RHcolor <-"#50C7C7"
+      Tcolor <- "#C75067"
+      SMCcolor <- "#5071C7"
+      
+      RH_SMC_P <- ggplot(rhT, aes(x=date)) +
+      
+            geom_line(aes(y=log_SMC_1), color=SMCcolor)+
+            geom_point(aes(y=log_SMC_1), color=SMCcolor, size=1)+
+            geom_line(aes(y=RH/ scaleFactor), color=RHcolor)+
+            geom_point(aes(y=RH/scaleFactor), color=RHcolor, size=1)+
+      
+            scale_y_continuous(
+              
+              # Features of the first axis
+              name = "  log SMC (wfv)",
+              
+              # Add a second axis and specify its features
+              sec.axis = sec_axis(~.*scaleFactor, name="RH (%)")
+              
+              
+            ) +theme_minimal()+
+            theme(axis.title.y.left=element_text(color=SMCcolor,size=12, face="bold"),
+                axis.text.y.left=element_text(color=SMCcolor,size=12),
+                axis.title.y.right=element_text(color=RHcolor,size=12, face="bold"),
+                axis.text.y.right=element_text(color=RHcolor, size=12))+
+            ggtitle("Relative Humidity and Soil Moisture Content (wfv)")
+      
+      T_P <- ggplot(rhT, aes(x=date))+
+            geom_line(aes(y=Temp), color=Tcolor)+
+            geom_point(aes(y=Temp), color=Tcolor, size=1)+
+            geom_line(aes(y=RH/ scaleFactorT), color=RHcolor)+
+            geom_point(aes(y=RH/scaleFactorT), color=RHcolor, size=1)+
+      
+            scale_y_continuous(
+              
+              # Features of the first axis
+              name = " Temperature (°C)",
+              
+              # Add a second axis and specify its features
+              sec.axis = sec_axis(~.*scaleFactorT, name="RH (%)")
+              
+              
+            )+
+            theme_minimal()+
+            theme(axis.title.y.left=element_text(color=Tcolor,size=12, face="bold"),
+                  axis.text.y.left=element_text(color=Tcolor,size=12),
+                  axis.title.y.right=element_text(color=RHcolor,size=12, face="bold"),
+                  axis.text.y.right=element_text(color=RHcolor, size=12))+
+            ggtitle("Temperature")
+      
+      
+      rm(rhT)
+      
+      gridExtra::grid.arrange(RH_SMC_P, 
+                              T_P)
+            
+
+})
+
+```
+
+Log transformation to see better what is happening with SMC:
+log(SMC+1) because that way 0 doesn't result in -Inf. 
+Where SMC is 0, log(SMC+1) is 0 too. 
+Highest measured SMC is 0.165, which  translates to 0.152 log(SMC+1). 
+
+```{r}
+
+```
+
+
+
+
+
+```{r, warning=FALSE, message=FALSE, eval=F}
+  
+# make an overview of names to find out which are out of line 
+nams <- lapply(seq(length(f)), function(y){
+    names(stat_year[[y]])
+})
+namdf <- do.call(rbind.data.frame, nams)
+names(namdf) <- paste0("V", seq(names(namdf)))
+# View(namdf)
+names(stat_year) <- sapply(seq(stat_year), function(i){ as.character(stat_year[[i]][1,2]) })
+
+# sort out 2009
+stat_year_clean <- stat_year[names(stat_year)!="2009"]
+# length(stat_year_clean)
+nams <- lapply(seq(length(stat_year_clean)), function(y){
+    names(stat_year_clean[[y]])
+})
+namdf <- do.call(rbind.data.frame, nams)
+names(namdf) <- paste0("V", seq(names(namdf)))
+# View(namdf)
+# any(namdf[1,] != namdf[4,])
+
+bullpass <- do.call("rbind.data.frame", stat_year_clean)
+
+names(bullpass) <- gsub(",", "_", names(bullpass))
+
+names(bullpass)[104]
+names(bullpass)[which(names(bullpass)=="SOIL_RH_%")[1]] <- "SOIL_RH_%_1"
+names(bullpass)[which(names(bullpass)=="SOIL_ELECT_RES")[1]] <- "SOIL_ELECT_RES_1"
+
+# filling the gaps in incomplete datetime variables so that no 
+#data are actually no data in the plot
+bullpass <- pad(bullpass) 
+
+bullpass$useable <- NA
+bullpass$useable[bullpass$Soil_Temp_2_cm_White_deg_C < (-1)] <- 0
+bullpass$useable <- as.factor(bullpass$useable)
+```
+
+
+```{r, warning=FALSE, message=FALSE, eval=F}
+
+prh <- ggplot(bullpass, aes(DATE_NA_NA, WATER_2_cm__1_wfv))+
+  geom_point(size=0.5)+
+  geom_line()+
+  ggtitle("Relative Humidity")+
+  theme_minimal()
+pst <- ggplot(bullpass, aes(DATE_NA_NA, Soil_Temp_2_cm_White_deg_C))+
+  geom_point(size=0.5)+
+  geom_line()+
+  geom_hline(yintercept = -1, lty="dashed")+
+  ggtitle("Soil temperature at surface level")+
+  theme_minimal()
+
+gridExtra::grid.arrange(prh,pst)
+
+
+prh <- ggplot(bullpass, aes(DATE_NA_NA, WATER_2_cm__1_wfv, color=useable))+
+  geom_point(size=0.5)+
+  scale_color_manual(values=c("#e1e2e6","#0d0d0c"))+
+  ggtitle("Relative Humidity")+
+  theme_minimal()
+pst <- ggplot(bullpass, aes(DATE_NA_NA, Soil_Temp_2_cm_White_deg_C, color=useable))+
+  geom_point(size=0.5)+
+  geom_hline(yintercept = -1, lty="dashed")+
+  scale_color_manual(values=c("#e1e2e6","#0d0d0c"))+
+  ggtitle("Soil temperature at surface level")+
+  theme_minimal()
+
+gridExtra::grid.arrange(prh,pst)
+```
+
