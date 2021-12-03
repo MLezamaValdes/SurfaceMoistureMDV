@@ -15,6 +15,7 @@ library(readxl)
 library(kableExtra)
 library(dplyr)
 library(ggplot2)
+library(padr)
 library(reshape2)
 ```
 
@@ -35,20 +36,21 @@ kbl(var_together[,c(1:3)],
 
 
 ```{r}
-summary(saws)
-# knitr::kable(head(saws))
-
+# summary(saws)
 kbl(head(saws)) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
                 full_width = F, 
                 position = "left")
 
 
-hist(log(saws$SMC), breaks=60)
 tail(sort(saws$SMC))
-ol <- which(saws$SMC > 5000,)
+ol <- which(saws$SMC > 30,) # not sure if that is justified
 # getting rid of those outliers
 saws <- saws[-ol, ]
+
+hist(log((saws$SMC)+1), breaks=90)
+tail(sort(saws$SMC))
+
 ```
 
 
@@ -74,8 +76,7 @@ stations <- readRDS(here("../calib_valid/AWS/SoilStations/stations_before_unifyi
 srh <- list(BP=stations$BP,
      BPE=stations$BPE)
 
-lapply(seq(srh), function(s){
-  print(s)
+RH_SMC_T_Plots <- lapply(seq(srh), function(s){
       if(s==1){
               rhT <- data.frame(RH=srh[[s]]$`Soil_RH_2_cm_%`,
                           SMC=srh[[s]]$`WATER_2_cm,_1_wfv`,
@@ -89,16 +90,20 @@ lapply(seq(srh), function(s){
       } 
       rhT$Temp[rhT$Temp=="NAN"] <- NA
       rhT$Temp <- as.numeric(rhT$Temp)
-      
+      rhT$Temp[rhT$Temp< (-100)] <- NA # one outlier at -200°C
       rhT$RH[rhT$RH == -100] <- NA # assuming this means no data 
       
       rhT <- rhT[complete.cases(rhT),]
-      
       rhT$log_SMC_1 <- log(rhT$SMC+1)
 
-      scaleFactor <-  max(rhT$RH) / max(rhT$log_SMC_1)
-      scaleFactorT <- max(rhT$RH) / max(rhT$Temp)
+      rhT <- pad(rhT) # fill up with NA to have gaps in linegraph 
       
+      scaleFactor <-  max(rhT$RH, na.rm=T) / max(rhT$log_SMC_1, na.rm=T)
+      scaleFactorT <- (max(rhT$RH, na.rm=T) - min(rhT$RH, na.rm=T)) / 
+                      (max(rhT$Temp, na.rm=T) - min(rhT$Temp, na.rm=T))
+      
+      add <- mean(rhT$RH,na.rm=T)-mean(rhT$Temp,na.rm=T)
+
       RHcolor <-"#50C7C7"
       Tcolor <- "#C75067"
       SMCcolor <- "#5071C7"
@@ -129,8 +134,8 @@ lapply(seq(srh), function(s){
       T_P <- ggplot(rhT, aes(x=date))+
             geom_line(aes(y=Temp), color=Tcolor)+
             geom_point(aes(y=Temp), color=Tcolor, size=1)+
-            geom_line(aes(y=RH/ scaleFactorT), color=RHcolor)+
-            geom_point(aes(y=RH/scaleFactorT), color=RHcolor, size=1)+
+            geom_line(aes(y=RH/ scaleFactorT-add), color=RHcolor)+
+            geom_point(aes(y=RH/scaleFactorT-add), color=RHcolor, size=1)+
       
             scale_y_continuous(
               
@@ -138,9 +143,8 @@ lapply(seq(srh), function(s){
               name = " Temperature (°C)",
               
               # Add a second axis and specify its features
-              sec.axis = sec_axis(~.*scaleFactorT, name="RH (%)")
-              
-              
+              sec.axis = sec_axis(~.*scaleFactorT+add, name="RH (%)")
+
             )+
             theme_minimal()+
             theme(axis.title.y.left=element_text(color=Tcolor,size=12, face="bold"),
@@ -149,13 +153,9 @@ lapply(seq(srh), function(s){
                   axis.text.y.right=element_text(color=RHcolor, size=12))+
             ggtitle("Temperature")
       
-      
-      rm(rhT)
-      
-      gridExtra::grid.arrange(RH_SMC_P, 
-                              T_P)
-            
-
+      p <- gridExtra::arrangeGrob(RH_SMC_P, T_P, nrow = 2)
+      return(p)
+          
 })
 
 ```
@@ -165,10 +165,16 @@ log(SMC+1) because that way 0 doesn't result in -Inf.
 Where SMC is 0, log(SMC+1) is 0 too. 
 Highest measured SMC is 0.165, which  translates to 0.152 log(SMC+1). 
 
-```{r}
 
+## Bull Pass 
+```{r}
+grid::grid.draw(RH_SMC_T_Plots[[1]])
 ```
 
+## Bull Pass East 
+```{r}
+grid::grid.draw(RH_SMC_T_Plots[[2]])
+```
 
 
 
