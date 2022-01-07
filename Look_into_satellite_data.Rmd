@@ -1,0 +1,486 @@
+---
+title: "Look into satellite data"
+author: "Maite"
+date: "14 12 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=F, warning=F, echo=F, out.width = '150%')
+```
+
+## 
+```{r}
+library(raster)
+library(sf)
+library(here)
+library(mapview)
+library(dplyr)
+library(stringr)
+library(lubridate)
+library(tidyr)
+library(ggplot2)
+library(corrplot)
+
+```
+
+
+```{r}
+Ldir <- "D:/Surface_Moisture/Landsat_data/"
+L8path <- "D:/Surface_Moisture/Landsat_data/L8/"
+L7path <- "D:/Surface_Moisture/Landsat_data/L7/"
+aoi <- st_read(here("../aux_data/Levy_MDV_actually.shp"))
+antaproj <- "+proj=stere +lat_0=-90 +lat_ts=-71 +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs"
+aoianta <- st_transform(aoi, antaproj)
+source(here("helpscripts/L_cloud_clean.R"))
+source(here("helpscripts/readMeta.R"))
+source(here("helpscripts/process_Landsat_BT.R"))
+template <- raster(here("../aux_data/template_new.tif"))
+```
+
+# Get point locations
+```{r,eval=F}
+iButDir <- paste0(here("../calib_valid/iButtons/"))
+
+gpkdir <- paste0(iButDir, "/gpkg_DDcorrection/")
+f <- list.files(gpkdir,full.names=T)
+
+iB_valley <- lapply(seq(f),function(i){
+  st_read(f[[i]])
+})
+
+
+unique_iB_loc <- iB_valley[[3]]
+unique_iB_loc <- unique_iB_loc[c("Site_Name", "geom")]
+
+iB_cols <- lapply(c(1,2,5,6,7,8), function(v){
+  iB_valley[[v]][c("Site_Name", "T", "Rh", "time", "geom")]
+})
+
+iB_all <- do.call("rbind", iB_cols)
+iB_all$time <- with_tz(iB_all$time, "Pacific/Auckland")
+iB_all$iBut_GMT_time <- with_tz(iB_all$time, "GMT")
+SoilS <- read_sf(paste0(here("../calib_valid/AWS/SoilStations/"), "/SoilS.gpkg"))
+
+SoilS$Site_Name <- SoilS$station
+
+SoilS_a <- SoilS[c("Site_Name", "geom")]
+
+Lproj <- "+proj=stere +lat_0=-90 +lat_ts=-71 +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs"
+point_locs <- rbind(unique_iB_loc, SoilS_a)
+point_locs_anta <- st_transform(point_locs, crs = crs(Lproj))
+
+SoilS_data <- readRDS(here("../calib_valid/AWS/SoilStations/all_AWSS_all_years.rds"))
+# match names to point_locs_anta to match after extraction 
+SoilS_data$Site_Name <- NA
+SoilS_data$Site_Name[SoilS_data$ID=="BP"] <- "Bull Pass "
+SoilS_data$Site_Name[SoilS_data$ID=="BPE"] <- "Bull Pass East"
+SoilS_data$Site_Name[SoilS_data$ID=="DJP"] <- "Don Juan Pond"
+SoilS_data$Site_Name[SoilS_data$ID=="GH"] <- "Granite Harbour"
+SoilS_data$Site_Name[SoilS_data$ID=="MP"] <- "Marble Point"
+SoilS_data$Site_Name[SoilS_data$ID=="MtF"] <- "Mt. Fleming"
+SoilS_data$Site_Name[SoilS_data$ID=="VV"] <- "Victoria Valley"
+
+datehour <- paste0(SoilS_data$DATE, "_",
+                          SoilS_data$HOUR/100)
+SoilS_data$time <- as.POSIXlt(datehour, format="%Y-%m-%d_%H", 
+                              tz="Pacific/Auckland")
+SoilS_data$GMT_time <- with_tz(SoilS_data$time, tz="GMT")
+
+
+AWSS_IDs <- c("Bull Pass ", "Bull Pass East", 
+              "Don Juan Pond", "Granite Harbour",
+              "Marble Point", "Mt. Fleming",
+              "Victoria Valley")
+iBut_IDs <- point_locs_anta$Site_Name[1:94]
+
+
+```
+
+# Data preparation: 
+d=type of Landsat data (1=bt,2=sr and 3=toa)
+
+## BT to LST 
+
+```{r, eval=F}
+ds <- list.files(L8path, full.names=T)
+# bt
+d=1
+fd <- list.files(ds[d],full.names=T)
+lstpath <- paste0("D:/Surface_Moisture/Landsat_data/", "LST/")
+if(!dir.exists(lstpath)){
+  dir.create(lstpath)
+}
+
+# cloudclean, mask by aoi, convert to BTC and LST and write 
+lapply(seq(fd), function(i){
+  processLandsatBT(fd[[i]])
+})
+```
+
+
+```{r, eval=F}
+lstf <- list.files(fd, pattern="_LST.tif", full.names=T)
+
+# make a list of LST files and acquisition dates 
+LSTs <- lapply(seq(lstf), function(i){
+    mtlFile <- list.files(dirname(lstf[i]), pattern="MTL.txt", full.names = T)
+    metaData <- readMeta(mtlFile)
+    Lsc_date<- metaData$ACQUISITION_DATE
+    LST <- raster(lstf[i])
+    return(list(LST, Lsc_date))
+})
+
+LSTs_date <- lapply(LSTs,"[[",2)
+LSTs <- lapply(LSTs, "[[",1)
+
+# match pixels to points 
+L_LST_match <- lapply(seq(LSTs), function(i){
+    
+  match_pix_points(sat_scene=LSTs[[i]], sattype="LST",
+                    point_locs=point_locs_anta,
+                    date = LSTs_date[[i]],
+                    maxna=1, sat_min_tolerance = 45,
+                    iB_min_tolerance = 5,
+                    SoilS_min_tolerance = 30)
+})
+
+(matched_LST_AWSS <- sapply(L_LST_match, "[[", 4))
+(matched_LST_iB <- sapply(L_LST_match, "[[", 5))
+
+data.frame(LScenenum = seq(1:length(L_LST_match)),
+           locinfo=sapply(L_LST_match, "[[", 3),
+           matched_LST_AWSS, matched_LST_iB)
+
+AWSS_LST_pix <- lapply(L_LST_match, "[[", 1)
+iBut_LST_pix <- lapply(L_LST_match, "[[", 2)
+
+```
+
+```{r, eval=F}
+
+AWSS_LST_pix <- AWSS_LST_pix[!is.na(AWSS_LST_pix)]
+AWSS_LST_full <- do.call("rbind", AWSS_LST_pix)
+
+iBut_LST_pix <- iBut_LST_pix[!is.na(iBut_LST_pix)]
+iBut_LST_full <- do.call("rbind", iBut_LST_pix)
+
+write.csv2(AWSS_LST_full, here("../calib_valid/pix_SM/iBut_LST_10scenes.csv"))
+write.csv2(iBut_LST_full, here("../calib_valid/pix_SM/AWSS_LST_10scenes.csv"))
+
+```
+
+
+## SR
+lsr_landsat_8_c1 
+lsr_landsat_etm_c1
+[Info from USGS on scaling](https://www.usgs.gov/faqs/how-do-i-use-scale-factor-landsat-level-2-science-products)
+
+Scale factor for C1 surface reflectance is 0.0001, Fill value is -9999 and valid range 0 to 10000. 
+
+Scale factor was applied, but valid range not applied
+
+Landsat 8 acquisition time comes in GMT. 
+iBut data was gathered in NZDT, but comes in the geopackage in CET/CEST...  ???
+
+
+# to do: RUN FROM HERE (PROCESSING SR FILES SO THEY ARE WRITTEN OUT)
+
+```{r, eval=F}
+#sr
+d=2 
+fd <- list.files(ds[d],full.names=T)
+
+# processing sr files 
+scc <- lapply(c(2:10), function(f){
+# scc <- lapply(seq(fd), function(f){
+  fls <- list.files(fd[f], pattern="sr_band..tif", full.names = T)
+  pqa <- list.files(fd[f], pattern="pixel_qa.tif", full.names = T)
+  mtlFile <- list.files(fd[f], pattern="MTL.txt", full.names = T)
+  
+  sn <- tools::file_path_sans_ext(basename(fls))
+  
+  s <- raster::stack(fls)
+  qa <- raster::raster(pqa)
+  
+  metaData <- readMeta(mtlFile)
+  Lsc_date<- metaData$ACQUISITION_DATE
+  
+  # cloud masking and scaling SR bands 2:7
+  scc <- L_cloud_scale(bands=s[[2:7]], qualras=qa)
+  
+  return(list(scc, Lsc_date))
+}) 
+
+# gathering sr files 
+scc <- lapply(seq(fd), function(f){
+  fls <- list.files(fd[f], pattern="_cloud_rm_scaled.tif", full.names = T)
+  mtlFile <- list.files(fd[f], pattern="MTL.txt", full.names = T)
+  
+  s <- raster::stack(fls)
+
+  metaData <- readMeta(mtlFile)
+  Lsc_date<- metaData$ACQUISITION_DATE
+  
+  return(list(s, Lsc_date))
+}) 
+
+
+scc_date <- lapply(scc,"[[",2)
+scc <- lapply(scc, "[[",1)
+
+# match pixels to points 
+L_sr_match <- lapply(seq(scc), function(i){
+    
+  match_pix_points(sat_scene=scc[[i]], sattype="sr",
+                    point_locs=point_locs_anta,
+                    date = scc_date[[i]],
+                    maxna=5, sat_min_tolerance = 45,
+                    iB_min_tolerance = 5,
+                    SoilS_min_tolerance = 30)
+})
+
+
+(matched_sr_AWSS <- sapply(L_sr_match, "[[", 4))
+(matched_sr_iB <- sapply(L_sr_match, "[[", 5))
+
+data.frame(LScenenum = seq(1:length(L_sr_match)),
+           locinfo=sapply(L_sr_match, "[[", 3),
+           matched_sr_AWSS, matched_sr_iB)
+
+AWSS_sr_pix <- lapply(L_sr_match, "[[", 1)
+iBut_sr_pix <- lapply(L_sr_match, "[[", 2)
+
+
+```
+
+
+```{r, eval=F}
+#toa 
+d=3
+fd <- list.files(ds[d],full.names=T)
+
+```
+
+bands 2 (b), 3(g), 4(r), 5(NIR), 6 (SWIR1), 7 (SWIR2), 10(thermal)
+```{r, eval=F}
+
+AWSS_sr_pix <- AWSS_sr_pix[!is.na(AWSS_sr_pix)]
+AWSS_sr_full <- do.call("rbind", AWSS_sr_pix)
+
+iBut_sr_pix <- iBut_sr_pix[!is.na(iBut_sr_pix)]
+iBut_sr_full <- do.call("rbind", iBut_sr_pix)
+
+write.csv2(iBut_sr_full, here("../calib_valid/pix_SM/iBut_sr_10scenes.csv"))
+write.csv2(AWSS_sr_full, here("../calib_valid/pix_SM/AWSS_sr_10scenes.csv"))
+
+```
+
+
+# to do: MAKE FIGURES AND CHECK CORRELATIONS INCLUDING BT DATA 
+
+
+
+# Make figures 
+```{r}
+iBut_sr_full <- read.csv2(here("../calib_valid/pix_SM/iBut_sr_10scenes.csv"))
+AWSS_sr_full <- read.csv2(here("../calib_valid/pix_SM/AWSS_sr_10scenes.csv"))
+
+iBut_LST_full <- read.csv2(here("../calib_valid/pix_SM/iBut_LST_10scenes.csv"))
+AWSS_LST_full <- read.csv2(here("../calib_valid/pix_SM/AWSS_LST_10scenes.csv"))
+
+
+
+```
+
+```{r}
+# aggregate so that all bands are in one variable 
+iBut_sr_full$Lsc_date <- as.POSIXct(iBut_sr_full$Lsc_date)
+iBut_sr_full$iBut_GMT_time <- as.POSIXct(iBut_sr_full$iBut_GMT_time)
+iBut_sr_full[,grep("tiv", names(iBut_sr_full))] <- NULL
+
+iBut_sr_full_long <- gather(iBut_sr_full, band, sr, 
+                    sr_band2:sr_band7, factor_key=TRUE)
+band2to7cols <- c("#2ea3c4", "#277924", "#D82011", "#9aec98",
+         "#Ec98e4", "#730668")
+```
+
+## iButtons 
+```{r}
+scaleFactor <-  max(iBut_sr_full_long$Rh, na.rm=T) / 1
+ggplot(iBut_sr_full_long)+
+  geom_point(aes(Lsc_date, sr, shape=Site, color=band))+
+  geom_point(aes(iBut_GMT_time, Rh/scaleFactor, shape=Site), cex=2, 
+             color="orange")+
+  xlab("date")+
+  scale_color_manual(values = band2to7cols)+
+  scale_y_continuous(limits=c(0,1),
+        # Features of the first axis
+        name = "SR",
+        # Add a second axis and specify its features
+        sec.axis = sec_axis(~.*scaleFactor, name="RH (%)")
+  ) +theme_minimal()+
+  theme(axis.title.y.left=element_text(color="black",size=11, face="bold"),
+        axis.text.y.left=element_text(color="black",size=11),
+        axis.title.y.right=element_text(color="orange",size=11, face="bold"),
+        axis.text.y.right=element_text(color="orange", size=11))+ 
+  ggtitle("Surface Reflectance and RH", subtitle = "by logger site (shape) and satellite band (color)")
+
+```
+
+Figure per site
+```{r}
+iBut_sr_split <- split(iBut_sr_full_long, iBut_sr_full_long$Site)
+
+SR_RH_split_plot_function <- function(data){
+    scaleFactor <-  max(data$Rh, na.rm=T) / 1
+    ggplot(data)+
+      geom_point(aes(Lsc_date, sr, shape=Site, color=band))+
+      geom_point(aes(iBut_GMT_time, Rh/scaleFactor, shape=Site), cex=2, 
+                 color="orange")+
+      xlab("date")+
+      scale_color_manual(values = band2to7cols)+
+      scale_y_continuous(limits=c(0,1),
+            # Features of the first axis
+            name = "SR",
+            # Add a second axis and specify its features
+            sec.axis = sec_axis(~.*scaleFactor, name="RH (%)")
+      ) +theme_minimal()+
+      theme(axis.title.y.left=element_text(color="black",size=11, face="bold"),
+            axis.text.y.left=element_text(color="black",size=11),
+            axis.title.y.right=element_text(color="orange",size=11, face="bold"),
+            axis.text.y.right=element_text(color="orange", size=11))+ 
+      ggtitle("Surface Reflectance and RH", subtitle = "by logger site (shape) and satellite band (color)")
+}
+
+splitplots <- lapply(iBut_sr_split, SR_RH_split_plot_function)
+
+splitplots
+
+
+
+```
+
+## AWSS
+
+```{r}
+# aggregate so that all bands are in one variable 
+AWSS_sr_full$Lsc_date <- as.POSIXct(AWSS_sr_full$Lsc_date)
+AWSS_sr_full$GMT_time <- as.POSIXct(AWSS_sr_full$GMT_time)
+AWSS_sr_full[,grep("tiv", names(AWSS_sr_full))] <- NULL
+
+AWSS_sr_full_long <- gather(AWSS_sr_full, band, sr, 
+                    sr_band2:sr_band7, factor_key=TRUE)
+band2to7cols <- c("#2ea3c4", "#277924", "#D82011", "#9aec98",
+         "#Ec98e4", "#730668")
+```
+
+One full figure 
+```{r}
+scaleFactor <-  max(AWSS_sr_full_long$SMC, na.rm=T) / 1
+ggplot(AWSS_sr_full_long)+
+  geom_point(aes(Lsc_date, sr, shape=Site, color=band))+
+  geom_point(aes(GMT_time, SMC/scaleFactor, shape=Site), cex=2, 
+             color="orange")+
+  xlab("date")+
+  scale_color_manual(values = band2to7cols)+
+  scale_y_continuous(limits=c(0,1),
+        # Features of the first axis
+        name = "SR",
+        # Add a second axis and specify its features
+        sec.axis = sec_axis(~.*scaleFactor, name="SMC (wfv)")
+  ) +theme_minimal()+
+  theme(axis.title.y.left=element_text(color="black",size=11, face="bold"),
+        axis.text.y.left=element_text(color="black",size=11),
+        axis.title.y.right=element_text(color="orange",size=11, face="bold"),
+        axis.text.y.right=element_text(color="orange", size=11))+ 
+  ggtitle("Surface Reflectance and SMC", subtitle = "by AWS site (shape) and satellite band (color)")
+
+```
+
+Figure per site
+```{r}
+AWSS_sr_split <- split(AWSS_sr_full_long, AWSS_sr_full_long$Site)
+
+SR_SMC_split_plot_function <- function(data){
+    scaleFactor <-  max(data$SMC, na.rm=T) / 1
+    ggplot(data)+
+      geom_point(aes(Lsc_date, sr, shape=Site, color=band))+
+      geom_point(aes(GMT_time, SMC/scaleFactor, shape=Site), cex=2, 
+                 color="orange")+
+      xlab("date")+
+      scale_color_manual(values = band2to7cols)+
+      scale_y_continuous(limits=c(0,1),
+            # Features of the first axis
+            name = "SR",
+            # Add a second axis and specify its features
+            sec.axis = sec_axis(~.*scaleFactor, name="SMC (wfv)")
+      ) +theme_minimal()+
+      theme(axis.title.y.left=element_text(color="black",size=11, face="bold"),
+            axis.text.y.left=element_text(color="black",size=11),
+            axis.title.y.right=element_text(color="orange",size=11, face="bold"),
+            axis.text.y.right=element_text(color="orange", size=11))+ 
+      ggtitle("Surface Reflectance and SMC", subtitle = "by AWSS site (shape) and satellite band (color)")
+}
+
+splitplots <- lapply(AWSS_sr_split, SR_SMC_split_plot_function)
+
+splitplots
+
+```
+
+
+
+There might be something about the relation between reflectance in the visible light and SWIR reflectance.. it seems like always when the moisture (RH or SMC) is relatively high, SWIR remains low, while VIS is relatively high.. When VIS reflectance is pretty high, SMC is low. 
+This is visible also in the following corrplot: rgb (bands 4,3,2) and nir (5) all correlate with SMC around r=-0.35 to r=-0.4, while SWIR bands 6 and 7 are positively correlated with r=0.77 and 0.83:
+For SMC it seems useful to try a VIS/SWIR index. SWIR band 6 seems best for exploiting the relation to VIS (measured reflectance was usually a bit lower than 7), especially with the green band 3, there is much negative correlation (-0.75). 
+
+## AWSS and SMC
+
+```{r, out.width = '150%'}
+AWSS_sr_full$ind <- (AWSS_sr_full$sr_band6-AWSS_sr_full$sr_band3)/(AWSS_sr_full$sr_band6+AWSS_sr_full$sr_band3)
+AWSS_sr_full$diff2 <- (AWSS_sr_full$sr_band6-AWSS_sr_full$sr_band2)
+AWSS_sr_full$diff3 <- (AWSS_sr_full$sr_band6-AWSS_sr_full$sr_band3)
+AWSS_sr_full$diff4 <- (AWSS_sr_full$sr_band6-AWSS_sr_full$sr_band4)
+AWSS_sr_full$diff5 <- (AWSS_sr_full$sr_band6-AWSS_sr_full$sr_band5)
+
+AW_srcormat <- cor(AWSS_sr_full[,c(34:38,4:9,26)], use="pairwise.complete.obs")
+corrplot(AW_srcormat, method = "number", type = "lower", number.cex=0.8,
+         tl.col = "black",insig="p-value")
+```
+
+
+For RH and the iButtons, the relation seems to be the opposite, bands 2:5 are quite highly positively correlated with Rh, the SWIR bands not really, though. 
+
+## iButtons and RH
+
+```{r, out.width = '150%'}
+iBut_sr_full$diff2 <- (iBut_sr_full$sr_band6-iBut_sr_full$sr_band2)
+iBut_sr_full$diff3 <- (iBut_sr_full$sr_band6-iBut_sr_full$sr_band3)
+iBut_sr_full$diff4 <- (iBut_sr_full$sr_band6-iBut_sr_full$sr_band4)
+iBut_sr_full$diff5 <- (iBut_sr_full$sr_band6-iBut_sr_full$sr_band5)
+iBut_sr_full$ind <- (iBut_sr_full$sr_band6-iBut_sr_full$sr_band3)/
+  (iBut_sr_full$sr_band6+iBut_sr_full$sr_band3)
+
+iB_srcormat <- cor(iBut_sr_full[,c(19:23,4:9,12)], use="pairwise.complete.obs")
+corrplot(iB_srcormat, method = "number", 
+         type = "lower", tl.col = "black", number.cex=0.8,
+         insig="p-value")
+```
+
+## Synopsis
+### SMC and AWSS
+
+* strong positive correlation SMC with SWIR
+  * r=0.93 for SMC and SWIR band 7
+  * r=0.77 for SMC and SWIR band 6
+* medium negative correlation SMC with VNIR
+* best difference index NIR and SWIR 6 (there is no difference when using band 7)
+
+### RH and iButtons
+* strong positive correlation with VIS bands 
+* no good correlation with SWIR on its own
+* strong negative correlation with difference band 6-VNIR
+  * r=-0.69 for RH and diff SWIR band 6 - NIR
+  * r=-0.68 for RH and diff SWIR band 6 - R or G or B 
+* differences: there is no change when using band 7 instead of band 6

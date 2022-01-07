@@ -1,0 +1,297 @@
+---
+title: "get Landsat data"
+author: "Maite"
+date: "13 12 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, message=F, warning=F)
+```
+
+## Landsat
+
+* VIS
+* SWIR 
+    * Landsat 8 launched Feb 2013, 
+    * Landsat 7 bands 5 and 7 similar to SWIR in L8, since 1999, sensor noise issue, 
+    * Landsat 4-5 bands as in 7 since 1984-2013
+        
+```{r}
+library(getSpatialData)
+library(raster)
+library(here)
+library(rgdal)
+library(ggplot2)
+library(sf)
+library(espa.tools)
+```
+
+
+```{r}
+source(here("../login.R"))
+# services()
+```
+
+## Basic settings 
+```{r}
+aoi <- readOGR(here("../aux_data/Levy_MDV_actually.shp"))
+tr_preStudy <- c("2011-01-01", "2014-01-01")
+#  archive directory:
+Ldir <- "D:/Surface_Moisture/Landsat_data/"
+set_archive(Ldir)
+
+# area of interest (AOI):
+# Use the example AOI or draw an AOI by calling set_aoi():
+set_aoi(aoi)
+# View the AOI:
+view_aoi()
+
+# get_products()
+Ldir <- "D:/Surface_Moisture/Landsat_data/"
+downloadpathL8 <- paste0(Ldir, "espa_order_downloads_L8/")
+downloadpathL7 <- paste0(Ldir, "espa_order_downloads_L7/")
+
+```
+
+## Query for available datasets 
+
+#### Only T2 available 
+Landsat scenes not meeting Tier 1 criteria during processing are assigned to Tier 2. Tier 2 scenes adhere to the same radiometric standard as Tier 1 scenes, but do not meet the Tier 1 geometry specification due to less accurate orbital information (specific to older Landsat sensors), significant cloud cover, insufficient ground control, or other factors. 
+
+```{r, eval=F}
+# Landsat_records <- get_records(time_range = tr_preStudy,
+#                        products = c("landsat_8_c1"))
+# Landsat_records_LSR <- get_records(time_range = tr_preStudy,
+#                                products="lsr_landsat_8_c1") # sr and bt and toa 
+# Landsat_records_OT_L2 <- get_records(time_range = tr_preStudy, # contains indices 
+#                                products="landsat_ot_c2_l2")
+# Landsat_records_ETM_L2 <- get_records(time_range = tr_preStudy,
+#                                products="landsat_etm_c2_l2")
+```
+
+Collection 2 seems to contain only indices, in Col 1 there is surface reflectance (sr), brightness temperature (bt) and top of atmosphere (toa) data available. 
+The LSR seems to be reducing data only slightly (3220 vs. 3248 scenes)
+I.e. use collection 1, lsr product 
+```{r, eval=F}
+# unique(Landsat_records_OT_L2$level)
+# unique(Landsat_records_ETM_L2$level)
+# unique(Landsat_records_LSR$level)
+# unique(Landsat_records$level)
+# 
+# nrow(Landsat_records)
+# nrow(Landsat_records_LSR)
+# 
+# unique(Landsat_records_LSR$collection_category)
+# unique(Landsat_records$collection_category)
+
+```
+
+## Subset L8 records
+```{r, eval=F}
+L_records <- get_records(time_range = tr_preStudy,
+                               products="lsr_landsat_8_c1") # sr and bt and toa 
+
+```
+
+select brightness temperature, top of atmosphere and surface reflectance,
+cloud cover < 30, overlap with aoi at least xxx,
+check availability, order and save query for download via espa order. 
+```{r, eval=F}
+records <- L_records[L_records$level == "bt" | L_records$level == "sr" | L_records$level == "toa",]
+
+# calculate overlap from footprints
+
+calc_footprint_aoi_overlap <- function(aoi, prop_aoi, query){
+  fp <- query$footprint
+  does_is <- st_intersects(fp, st_as_sf(aoi), sparse = F)
+  query$intersects <- does_is
+  is <- st_intersection(fp, st_as_sf(aoi))
+  area_is <- st_area(is)
+  aoiarea <- st_area(st_as_sf(aoi))
+  aoiprop <- area_is/aoiarea
+  query$aoiprop[query$intersects==TRUE] <- aoiprop
+  sel <- as.numeric(aoiprop) >= prop_aoi
+  query$sel_overlap <- NA
+  query$sel_overlap[query$intersects==TRUE] <- sel
+  return(query)
+}
+
+aoiwgs <- spTransform(aoi, CRSobj = CRS("+init=epsg:4326"))
+records <- calc_footprint_aoi_overlap(aoi=aoiwgs, 
+                                      prop_aoi = 0.3, 
+                                      query=records)
+records <- records[records$sel_overlap==TRUE,]
+records$product_group <- "landsat"
+records <- check_availability(records)
+
+table(records$download_available)
+# add summary for ordering 
+records$summary <- paste0("ID: ", records$record_id, " Acquisition Date: ", records$date_acquisition,
+" Path: ", records$tile_number_horizontal , " Row: ", records$tile_number_vertical)
+records <- records[records$cloudcov_land < 30,] # cloud cover 
+nrow(records)/3
+
+records <- order_data(records)
+
+saveRDS(records, paste0(Ldir, "records.RDS"))
+
+```
+
+
+## Subset L7 records
+```{r, eval=F}
+L7_records <- get_records(time_range = tr_preStudy,
+                               products="lsr_landsat_etm_c1") # sr and bt and toa 
+
+```
+
+select brightness temperature, top of atmosphere and surface reflectance,
+cloud cover < 30, check availability, order and download
+```{r, eval=F}
+L7_records <- L7_records[L7_records$level == "bt" | L7_records$level == "sr" | L7_records$level == "toa",]
+L7_records <- check_availability(L7_records)
+table(L7_records$download_available)
+# add summary for ordering 
+L7_records$summary <- paste0("ID: ", L7_records$record_id, " Acquisition Date: ", L7_records$date_acquisition,
+" Path: ", L7_records$tile_number_horizontal , " Row: ", L7_records$tile_number_vertical)
+L7_records <- L7_records[L7_records$cloudcov_land < 30,] # cloud cover 
+
+L7_records <- calc_footprint_aoi_overlap(aoi=aoiwgs, 
+                                      prop_aoi = 0.3, 
+                                      query=L7_records)
+L7_records <- L7_records[L7_records$sel_overlap==TRUE,]
+records$product_group <- "landsat"
+nrow(L7_records)/3
+
+
+L7_records <- order_data(L7_records)
+saveRDS(L7_records, paste0(Ldir, "L7_records.RDS"))
+
+```
+
+
+```{r}
+L8_records <- readRDS(paste0(Ldir, "records.RDS"))
+L8_records <- L8_records[!is.na(L8_records$download_available),]
+
+ggplot(L8_records, aes(x=start_time, y=cloudcov_land))+
+  geom_point()+theme_minimal()+
+  ggtitle(paste0("Landsat 8 data Nov 13 to Jan 14, n=", nrow(L8_records)/3))
+
+# L8_records <- get_data(L8_records) # doesn't work
+
+```
+
+
+```{r}
+L7_records <- readRDS(paste0(Ldir, "L7_records.RDS"))
+L7_records <- L7_records[!is.na(L7_records$download_available),]
+
+ggplot(L7_records, aes(x=start_time, y=cloudcov_land))+
+  geom_point()+theme_minimal()+
+  ggtitle(paste0("Landsat 8 data Jan 2011 to March 13, n=", nrow(L7_records)/3))
+
+# L7_records <- get_data(L7_records)
+
+```
+
+There is no Landsat 4/5 data available for that timeframe and AOI, I checked that via the EarthExplorer as well as it was unavailable at the time of checking via package.
+
+## Downloading via espa.tools because get_data() doesn't work
+
+# To do: run all downloads 
+
+```{r,eval=F}
+#install.packages("espa.tools", repos="http://R-Forge.R-project.org")
+
+# divide up by level to sort into different folders
+L8sr <- L8_records[L8_records$level == "sr",]
+L8toa <- L8_records[L8_records$level == "toa",]
+L8bt <- L8_records[L8_records$level == "bt",]
+
+L8_rec_list <- list("sr"=L8sr, "toa"=L8toa,"bt"=L8bt)
+
+L7sr <- L7_records[L7_records$level == "sr",]
+L7toa <- L7_records[L7_records$level == "toa",]
+L7bt <- L7_records[L7_records$level == "bt",]
+
+L7_rec_list <- list("sr"=L7sr, "toa"=L7toa,"bt"=L7bt)
+
+# # make dirs to sort files into
+# dirstocreateL8 <- paste0(downloadpathL8, names(L8_rec_list), "/")
+# for(i in seq(dirstocreateL8)){
+#   dir.create(dirstocreateL8[i])
+# }
+# 
+# dirstocreateL7 <- paste0(downloadpathL7, names(L7_rec_list), "/")
+# for(i in seq(dirstocreateL7)){
+#   dir.create(dirstocreateL7[i])
+# }
+
+# download function 
+download_L <- function(downloadpath, recordslist){
+                lapply(seq(3), function(l){
+                    records <- recordslist[[l]]
+                    dlp <- paste0(downloadpath, names(recordslist)[l], "/")
+    
+                      # for(i in seq(records$order_id)){
+                      for(i in c(1:10)){
+                      print(paste0("starting with ", i))
+                        earthexplorer_download(usgs_eros_username=USGSUser,
+                                             usgs_eros_password=USGSPW,
+                                             output_folder = dlp, 
+                                             verbose=T,
+                                             ordernum = records$order_id[i],
+                                             overwrite = T)
+                      print(paste0("downloaded ", i))
+
+                      }
+                })
+              }
+
+
+download_L(downloadpathL8, L8_rec_list)
+download_L(downloadpathL7, L7_rec_list)
+
+```
+
+# To do: untar all with split versions
+
+```{r, eval=F}
+  
+sdirs <- list.files(downloadpathL8, full.names = T)
+sdirnam <- basename(sdirs)
+for(d in seq(sdirs)){
+    print(paste0("starting subdir ", sdirs[d]))
+    sc <- list.files(sdirs[d], full.names =T)
+    s <- list.files(sdirs[d], full.names = F)
+    for(i in seq(sc)){
+      print(paste0("starting untar ", i, "/", length(sc)))
+      untar(sc[i],
+            exdir=paste0("D:/Surface_Moisture/Landsat_data/L8/", 
+                         sdirnam[d], "/",
+                         tools::file_path_sans_ext(tools::file_path_sans_ext(s[i])),
+                         "/"))
+    }
+}
+
+sdirs <- list.files(downloadpathL7, full.names = T)
+sdirnam <- basename(sdirs)
+for(d in seq(sdirs)){
+    print(paste0("starting subdir ", sdirs[d]))
+    sc <- list.files(sdirs[d], full.names =T)
+    s <- list.files(sdirs[d], full.names = F)
+    for(i in seq(sc)){
+      print(paste0("starting untar ", i, "/", length(sc)))
+      untar(sc[i],
+            exdir=paste0("D:/Surface_Moisture/Landsat_data/L7/", 
+                         sdirnam[d], "/",
+                         tools::file_path_sans_ext(tools::file_path_sans_ext(s[i])),
+                         "/"))
+    }
+}
+
+
+```
+

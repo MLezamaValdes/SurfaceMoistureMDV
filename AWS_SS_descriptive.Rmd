@@ -167,14 +167,182 @@ Highest measured SMC is 0.165, which  translates to 0.152 log(SMC+1).
 
 
 ## Bull Pass 
-```{r}
+```{r, out.width = "100%", fig.height=9}
 grid::grid.draw(RH_SMC_T_Plots[[1]])
 ```
 
 ## Bull Pass East 
-```{r}
+```{r, out.width = "100%", fig.height=9}
 grid::grid.draw(RH_SMC_T_Plots[[2]])
 ```
+
+#### per year
+```{r}
+s=2
+rhT <- data.frame(RH=srh[[s]]$`Soil_RH_2_cm_%`,
+            SMC=srh[[s]]$`WATER_2_cm,_1_wfv`,
+            Temp=srh[[s]]$Soil_Temp_2_cm_deg_C, 
+            date=srh[[s]]$DATE_NA_NA)
+
+rhT$Temp[rhT$Temp=="NAN"] <- NA
+rhT$Temp <- as.numeric(rhT$Temp)
+rhT$Temp[rhT$Temp< (-100)] <- NA # one outlier at -200°C
+rhT$RH[rhT$RH == -100] <- NA # assuming this means no data 
+
+rhT <- rhT[complete.cases(rhT),]
+rhT$log_SMC_1 <- log(rhT$SMC+1)
+
+rhT <- pad(rhT) # fill up with NA to have gaps in linegraph 
+library(lubridate)
+rhT$year <- year(rhT$date)
+# split
+cut_at <- c(4154, 9481, 17023, 24032, 28763)
+
+rht1 <- rhT[1:cut_at[1],]
+rht2 <- rhT[cut_at[1]:cut_at[2],]
+rht3 <- rhT[cut_at[2]:cut_at[3],]
+rht3 <- rhT[cut_at[3]:cut_at[4],]
+rht4 <- rhT[cut_at[4]:cut_at[5],]
+rht5 <- rhT[cut_at[5]:nrow(rhT),]
+
+cuts <- list(rht1, rht2, rht3, rht4, rht5)
+
+timeinfo <- lapply(seq(cuts), function(c){
+  unique(cuts[[c]]$year)
+})
+
+RH_SMC_T_cut_Plots <- lapply(seq(cuts), function(c){
+      scaleFactor <-  max(cuts[[c]]$RH, na.rm=T) / max(cuts[[c]]$log_SMC_1, na.rm=T)
+      scaleFactorT <- (max(cuts[[c]]$RH, na.rm=T) - min(cuts[[c]]$RH, na.rm=T)) / 
+                      (max(cuts[[c]]$Temp, na.rm=T) - min(cuts[[c]]$Temp, na.rm=T))
+      scaleFactorT_SMC <- (max(cuts[[c]]$log_SMC_1, na.rm=T) - 
+                             min(cuts[[c]]$log_SMC_1, na.rm=T)) / 
+                          (max(cuts[[c]]$Temp, na.rm=T) - 
+                             min(cuts[[c]]$Temp, na.rm=T))
+      
+      add <- mean(cuts[[c]]$RH,na.rm=T)-
+            mean(cuts[[c]]$Temp,na.rm=T)
+      addS <- abs(mean(cuts[[c]]$Temp*scaleFactorT_SMC,na.rm=T)-
+                    mean(cuts[[c]]$log_SMC_1,na.rm=T))
+      
+      RHcolor <-"#50C7C7"
+      Tcolor <- "#C75067"
+      SMCcolor <- "#5071C7"
+      
+      RH_SMC_P <- ggplot(cuts[[c]], aes(x=date)) +
+      
+            geom_line(aes(y=log_SMC_1), color=SMCcolor)+
+            geom_point(aes(y=log_SMC_1), color=SMCcolor, size=1)+
+            geom_line(aes(y=RH/ scaleFactor), color=RHcolor)+
+            geom_point(aes(y=RH/scaleFactor), color=RHcolor, size=1)+
+      
+            scale_y_continuous(
+              
+              # Features of the first axis
+              name = "  log SMC (wfv)",
+              
+              # Add a second axis and specify its features
+              sec.axis = sec_axis(~.*scaleFactor, name="RH (%)")
+              
+              
+            ) +theme_minimal()+
+            theme(axis.title.y.left=element_text(color=SMCcolor,size=12, face="bold"),
+                axis.text.y.left=element_text(color=SMCcolor,size=12),
+                axis.title.y.right=element_text(color=RHcolor,size=12, face="bold"),
+                axis.text.y.right=element_text(color=RHcolor, size=12))+
+            ggtitle("Relative Humidity and Soil Moisture Content (wfv)")
+
+      SMC_T <- ggplot(cuts[[c]], aes(x=date))+
+            geom_line(aes(y=log_SMC_1), color=SMCcolor)+
+            geom_point(aes(y=log_SMC_1), color=SMCcolor, size=1)+
+            geom_line(aes(y=Temp*scaleFactorT_SMC), color=Tcolor)+
+            geom_point(aes(y=Temp*scaleFactorT_SMC), color=Tcolor, size=1)+
+      
+            scale_y_continuous(
+              
+              # Features of the first axis
+              name = "log SMC (wfv) ",
+              
+              # Add a second axis and specify its features
+              sec.axis = sec_axis(~./scaleFactorT_SMC, name="Temperature (°C) ")
+
+            )+
+            theme_minimal()+
+            theme(axis.title.y.left=element_text(color=SMCcolor,size=12, face="bold"),
+                  axis.text.y.left=element_text(color=SMCcolor,size=12),
+                  axis.title.y.right=element_text(color=Tcolor,size=12, face="bold"),
+                  axis.text.y.right=element_text(color=Tcolor, size=12))+
+            ggtitle("SMC and Temperature")
+      
+        T_P <- ggplot(cuts[[c]], aes(x=date))+
+            geom_line(aes(y=Temp), color=Tcolor)+
+            geom_point(aes(y=Temp), color=Tcolor, size=1)+
+            geom_line(aes(y=RH/ scaleFactorT-add), color=RHcolor)+
+            geom_point(aes(y=RH/scaleFactorT-add), color=RHcolor, size=1)+
+      
+            scale_y_continuous(
+              
+              # Features of the first axis
+              name = " Temperature (°C)",
+              
+              # Add a second axis and specify its features
+              sec.axis = sec_axis(~.*scaleFactorT+add, name="RH (%)")
+
+            )+
+            theme_minimal()+
+            theme(axis.title.y.left=element_text(color=Tcolor,size=12, face="bold"),
+                  axis.text.y.left=element_text(color=Tcolor,size=12),
+                  axis.title.y.right=element_text(color=RHcolor,size=12, face="bold"),
+                  axis.text.y.right=element_text(color=RHcolor, size=12))+
+            ggtitle("Temperature and RH")
+            
+      
+      p <- gridExtra::arrangeGrob(RH_SMC_P,SMC_T,T_P, nrow = 3)
+      return(p)
+          
+})
+```
+
+# Taken apart per timeframe of available data from Bull Pass East 
+
+
+### 2012
+```{r, out.width = "100%", fig.height=9}
+grid::grid.draw(RH_SMC_T_cut_Plots[[1]])
+```
+
+### 2012,2013
+```{r, out.width = "100%", fig.height=9}
+grid::grid.draw(RH_SMC_T_cut_Plots[[2]])
+```
+
+### 2015, 2016
+```{r, out.width = "100%", fig.height=9}
+grid::grid.draw(RH_SMC_T_cut_Plots[[3]])
+```
+
+### 2016, 2017
+```{r, out.width = "100%", fig.height=9}
+grid::grid.draw(RH_SMC_T_cut_Plots[[4]])
+```
+
+### 2017, 2018
+```{r, out.width = "100%", fig.height=9}
+grid::grid.draw(RH_SMC_T_cut_Plots[[5]])
+
+```
+
+
+### Problem: 
+* There's only T and RH at the iButton locations, and only SMC at the AWS locations. 
+* iButtons: good spatial and elevational gradient coverage
+* SAWS: good accuracy, actually measuring SMC and not RH 
+* RH and SMC: there seems to be some connection but no clear relationship
+* SMC and T: sometimes there's a great relation (BPE 2012) sometimes not really..
+* T and RH: there is obviously no relation between temperature and RH
+
+
+## Plan: Try both parameters and make a pre-study checking for success with both.
 
 
 

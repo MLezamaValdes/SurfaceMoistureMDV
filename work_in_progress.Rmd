@@ -19,10 +19,16 @@ toc: yes
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE, message=F, warning = F)
 
 # Colors: DarkMagenta, DarkCyan, DarkBlue, Teal, YellowGreen
 ```
+
+```{r}
+library(here)
+library(raster)
+```
+
 
 # Work plan
 
@@ -124,30 +130,92 @@ Could be interesting to get precipitation from there
 ### Potential spatial predictors
 ![Potential spatial predictors](spatial_predictors.png){width=300}
 
+* *backscatter* from a SAR satellite (Sentinel 1? good temporal and spatial resolution,ongoing mission since April 2014, open access) as a direct measurement of SMC
+    * Radarsat-2 for iButtons
+    * Sentinel 1a and 1b for climate stations 2014-2019
+    * Radarsat-1 for climate stations before 2011? 
+* *LST* to capture SMC effect on thermal inertia since 1999 30m resolution 
+* *wind speed and direction* as forcing for thermal behaviour of wetted soils. available in NZ: 3,3 km resolution from 2013-2020 and 0,89 km resolution from 2017-2020 
+* *optical satellite data* (mostly longer wavelenghts interesting, i.e.SWIR to capture SMC via darkening of surfaces) Landsat / Sentinel 2 (since 2015), try approach as in Haubrock et al. (2008): R2 values gained from linear correlation between soilmoisture and normalized difference of two bands 
+* terrain-derived data 
+    * TWI for (subsurface) routing of meltwater (calculated on 8m)
+    * capture *regional microclimate* i.e. small depressions, polyon cracks etc. (calculated on 1m)
+* *distance to lakes and runoff channels* to capture wetted margins 
+* *soil type and permafrost distribution* data 
+* *pH* (Pierre: “pH is very much correlated to soil moisture, and more linear than EC(because it’s already a log scale!), but I could also share EC estimates if need be.”) *electrical conductivity* as salinity proxy which may interfere with backscatter
+
+### Radar data 
+For Radar only Radarsat satellites and Senintel 1 (C-Band) would be useful: 
+https://www.unavco.org/instrumentation/geophysical/imaging/sar-satellites/sar-satellites.html
+
+![](sar_satellite_missions_LI.jpg)
+For SAR processing via python: https://pyrosar.readthedocs.io/en/latest/ 
+
+download SAR data from https://search.asf.alaska.edu (Radarsat 1 is on there)
+
+Radarsat-2 ESA archive - 2 scenes from the ice tongue... is that all there is? 
+![](radarsat-2_collection.PNG){width=300}
+Looks better: 
+![overview](Mouginot_1.PNG)
+Radarsat 2: 
+![Radarsat 2](Mouginot_Jun13-Jun14.PNG)
+Sentinel 1: 
+![Sentinel 1](Mouginot_Jun15-Jun16.PNG) 
+https://earth.esa.int/eogateway/catalog/radarsat-1-2-full-archive-and-tasking 
+Eo Sign in https://earth.esa.int/web/guest/pi-community/myearthnet 
+Data access request filed, view progress under https://esatellus.service-now.com/csp?id=esa_homepage 
+
+
+Is Radarsat and Sentinel 1 comparable? Then I could use Radarsat 1 and 2 and Sentinel 1
+Both C band and multiple polarizations
+
+
+# Radarsat-2 acquisition
+https://earth.esa.int/eogateway/search?text=&category=Data&filter=radarsat-2&sortby=NEWEST_FIRST 
+
+# Pre Study: 2011-01-01 to 2014-01-01
+
 #### Already available: 
 * DEM 8 / 30m
         * TWI
         * slope
 * rock outcrop to use as a mask 
   * use soil type map to find out where there is only rock and no soil
-* LST 30m 
 * soil types
 * pH model (Pierre: "pH is very much correlated to soil moisture, and more linear 
 than EC (because it's already a log scale!), but I could also share EC estimates if need be.") 
 
+```{r}
+
+list.files(here("../predictors/"))
+
+predpath <- here("../predictors/")
+  
+dem <- raster(paste0(predpath, "/DEM_8m_MDV_filled_aoi.tif"))
+full_grids <- readRDS(paste0(predpath, "/full_size_grids_all_layers.RDS"))
+slope <- full_grids$slope
+rock_out <- full_grids$landcoverres
+soil_type <- full_grids$soilraster
+
+```
+
       
-      
-#### To acquire
+#### To acquire / produce 
 * RS data: 
     * SWIR 
-    * downscaled LST 
-    * radar
+        * Landsat 8 launched Feb 2013, 
+        * Landsat 7 bands 5 and 7 similar to SWIR in L8, since 1999, sensor noise issue, 
+        * Landsat 4-5 bands as in 7 since 1984-2013
+    * downscaled LST from 1999 on
+    * Radarsat-2 data 
 * EC (Pierre)?
+
 
 ## Methods
 
 * Statistical Exploration of associations 
   * check wind relevance with station data? 
+  * look into spatstat package point pattern covariate models (Baddeley 2008 https://training.fws.gov/courses/references/tutorials/geospatial/CSP7304/documents/PointPatterTutorial.pdf) are covariates correlated with feature of interest, inspect spatial trends in residuals 
 * Modelling
 * Explainable AI to find out which factors are relevant how
 * Analysis of Moisture patterns 

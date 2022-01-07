@@ -1,0 +1,39 @@
+---
+title: "Pre-Study"
+author: "Maite"
+date: "8 12 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 2011-01-01 to 2014-01-01
+## Predictors
+
+
+
+#### Already available: 
+* DEM 8 / 30m
+        * TWI
+        * slope
+* rock outcrop to use as a mask 
+  * use soil type map to find out where there is only rock and no soil
+* soil types
+* pH model (Pierre: "pH is very much correlated to soil moisture, and more linear 
+than EC (because it's already a log scale!), but I could also share EC estimates if need be.") 
+
+      
+      
+#### To acquire
+* RS data: 
+    * SWIR 
+        * Landsat 8 launched Feb 2013, 
+        * Landsat 7 bands 5 and 7 similar to SWIR in L8, since 1999, sensor noise issue, 
+        * Landsat 4-5 bands as in 7 since 1984-2013
+    * downscaled LST from 1999 on
+    * radar Sentinel 1 launched April 3, 2014 - then we only have data for the 7 climate stations
+* EC (Pierre)?
+
+

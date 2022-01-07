@@ -296,11 +296,8 @@ loc_SoilS <- loc_SoilS[1:7,]
 loc_SoilS$Sread <- as.numeric(loc_SoilS$Sread)
 loc_SoilS$Eread <- as.numeric(loc_SoilS$Eread)
 loc_SoilS$Nread <- loc_SoilS$Sread*(-1)
-
-
 SoilS = st_as_sf(loc_SoilS, coords = c("Eread","Nread"), remove = FALSE,
               crs=4326)
-
 SoilS <- SoilS[order(SoilS$station),]
 
 mapview(SoilS, label="station", map.types = "Esri.WorldImagery",
@@ -312,6 +309,10 @@ mapview(SoilS, label="station", map.types = "Esri.WorldImagery",
   mapview(unique_locations,label="Valley",zcol="Valley",
           cex=3, 
           col.regions = icols)
+
+
+st_write(SoilS, 
+         paste0(here("../calib_valid/AWS/SoilStations/"), "/SoilS.gpkg"))
   
 ```
 
