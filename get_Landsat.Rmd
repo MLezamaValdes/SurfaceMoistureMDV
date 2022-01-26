@@ -250,25 +250,36 @@ download_L <- function(downloadpath, recordslist){
                     print(paste0("starting with ", l, " (1= sr / 2=bt)"))
                     records <- recordslist[[l]]
                     dlp <- paste0(downloadpath, names(recordslist)[l], "/")
-    
+                    download_missed <- 0
+
                       # for(i in seq(records$order_id)){
-                      for(i in c(1:nrow(records))){
+                      for(i in c(12:nrow(records))){
                       print(paste0("starting with ", i))
                       print(c(records$summary[i]))
                       if(records$ordered[i]==TRUE){
-                          earthexplorer_download(usgs_eros_username=newUSGSUser,
+                        
+                        
+                          d <- try(earthexplorer_download(usgs_eros_username=newUSGSUser,
                                              usgs_eros_password=newUSGSPW,
                                              output_folder = dlp, 
                                              verbose=T,
                                              ordernum = records$order_id[i],
-                                             overwrite = T)
-                          print(paste0("downloaded ", i))
+                                             overwrite = T))
+                          if(class(d) == "try-error"){
+                            print(paste0("couldn't download ", i))
+                            download_missed <- append(download_missed, i)
+                            write.csv2(download_missed, paste0(downloadpath, "download_missed_l", l, ".csv"))
+                          } else {
+                            print(paste0("downloaded ", i))
+                          }
                       } else {
                         print("scene was not ordered")
                       }
                       }
+
                 })
               }
+
 
 
 download_L(downloadpath=downloadpathL8, 
