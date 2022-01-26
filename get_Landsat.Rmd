@@ -49,8 +49,8 @@ view_aoi()
 
 # get_products()
 Ldir <- "D:/Surface_Moisture/Landsat_data/"
-downloadpathL8 <- paste0(Ldir, "espa_order_downloads_L8/")
-downloadpathL7 <- paste0(Ldir, "espa_order_downloads_L7/")
+downloadpathL8 <- paste0(Ldir, "espa_order_downloads_L8_new/")
+downloadpathL7 <- paste0(Ldir, "espa_order_downloads_L7_new/")
 
 ```
 
@@ -63,14 +63,14 @@ Landsat scenes not meeting Tier 1 criteria during processing are assigned to Tie
 # Landsat_records <- get_records(time_range = tr_preStudy,
 #                        products = c("landsat_8_c1"))
 # Landsat_records_LSR <- get_records(time_range = tr_preStudy,
-#                                products="lsr_landsat_8_c1") # sr and bt and toa 
+#                                products="lsr_landsat_8_c1") # sr and bt 
 # Landsat_records_OT_L2 <- get_records(time_range = tr_preStudy, # contains indices 
 #                                products="landsat_ot_c2_l2")
 # Landsat_records_ETM_L2 <- get_records(time_range = tr_preStudy,
 #                                products="landsat_etm_c2_l2")
 ```
 
-Collection 2 seems to contain only indices, in Col 1 there is surface reflectance (sr), brightness temperature (bt) and top of atmosphere (toa) data available. 
+Collection 2 seems to contain only indices, in Col 1 there is surface reflectance (sr), brightness temperature (bt)  data available. 
 The LSR seems to be reducing data only slightly (3220 vs. 3248 scenes)
 I.e. use collection 1, lsr product 
 ```{r, eval=F}
@@ -90,7 +90,7 @@ I.e. use collection 1, lsr product
 ## Subset L8 records
 ```{r, eval=F}
 L_records <- get_records(time_range = tr_preStudy,
-                               products="lsr_landsat_8_c1") # sr and bt and toa 
+                               products="lsr_landsat_8_c1") # sr and bt 
 
 ```
 
@@ -98,7 +98,7 @@ select brightness temperature, top of atmosphere and surface reflectance,
 cloud cover < 30, overlap with aoi at least xxx,
 check availability, order and save query for download via espa order. 
 ```{r, eval=F}
-records <- L_records[L_records$level == "bt" | L_records$level == "sr" | L_records$level == "toa",]
+records <- L_records[L_records$level == "bt" | L_records$level == "sr",]
 
 # calculate overlap from footprints
 
@@ -121,20 +121,32 @@ aoiwgs <- spTransform(aoi, CRSobj = CRS("+init=epsg:4326"))
 records <- calc_footprint_aoi_overlap(aoi=aoiwgs, 
                                       prop_aoi = 0.3, 
                                       query=records)
-records <- records[records$sel_overlap==TRUE,]
-records$product_group <- "landsat"
-records <- check_availability(records)
+# records$product_group <- "landsat"
 
+records <- check_availability(records, verbose=TRUE) # this is not working, thus next line
+# records$download_available <- FALSE
 table(records$download_available)
+
 # add summary for ordering 
 records$summary <- paste0("ID: ", records$record_id, " Acquisition Date: ", records$date_acquisition,
 " Path: ", records$tile_number_horizontal , " Row: ", records$tile_number_vertical)
+
 records <- records[records$cloudcov_land < 30,] # cloud cover 
-nrow(records)/3
+nrow(records)/2
+
+records <- records[records$sel_overlap==TRUE,]
 
 records <- order_data(records)
 
-saveRDS(records, paste0(Ldir, "records.RDS"))
+
+records$download_available
+records$order_status
+
+
+saveRDS(records, paste0(Ldir, "records_new.RDS"))
+
+# edit(getAnywhere('order_data'), file='source_orer_data.r')
+
 
 ```
 
@@ -142,27 +154,29 @@ saveRDS(records, paste0(Ldir, "records.RDS"))
 ## Subset L7 records
 ```{r, eval=F}
 L7_records <- get_records(time_range = tr_preStudy,
-                               products="lsr_landsat_etm_c1") # sr and bt and toa 
+                               products="lsr_landsat_etm_c1") # sr and bt 
 
 ```
 
 select brightness temperature, top of atmosphere and surface reflectance,
 cloud cover < 30, check availability, order and download
 ```{r, eval=F}
-L7_records <- L7_records[L7_records$level == "bt" | L7_records$level == "sr" | L7_records$level == "toa",]
+L7_records <- L7_records[L7_records$level == "bt" | L7_records$level == "sr",]
 L7_records <- check_availability(L7_records)
 table(L7_records$download_available)
 # add summary for ordering 
 L7_records$summary <- paste0("ID: ", L7_records$record_id, " Acquisition Date: ", L7_records$date_acquisition,
 " Path: ", L7_records$tile_number_horizontal , " Row: ", L7_records$tile_number_vertical)
+
 L7_records <- L7_records[L7_records$cloudcov_land < 30,] # cloud cover 
 
 L7_records <- calc_footprint_aoi_overlap(aoi=aoiwgs, 
                                       prop_aoi = 0.3, 
                                       query=L7_records)
 L7_records <- L7_records[L7_records$sel_overlap==TRUE,]
-records$product_group <- "landsat"
-nrow(L7_records)/3
+
+# records$product_group <- "landsat"
+nrow(L7_records)/2
 
 
 L7_records <- order_data(L7_records)
@@ -172,12 +186,14 @@ saveRDS(L7_records, paste0(Ldir, "L7_records.RDS"))
 
 
 ```{r}
-L8_records <- readRDS(paste0(Ldir, "records.RDS"))
+L8_records <- readRDS(paste0(Ldir, "records_new.RDS"))
 L8_records <- L8_records[!is.na(L8_records$download_available),]
+
+L8_records <- L8_records[L8_records$level=="sr" | L8_records$level=="bt",] 
 
 ggplot(L8_records, aes(x=start_time, y=cloudcov_land))+
   geom_point()+theme_minimal()+
-  ggtitle(paste0("Landsat 8 data Nov 13 to Jan 14, n=", nrow(L8_records)/3))
+  ggtitle(paste0("Landsat 8 data Nov 13 to Jan 14, n=", nrow(L8_records)/2))
 
 # L8_records <- get_data(L8_records) # doesn't work
 
@@ -187,10 +203,11 @@ ggplot(L8_records, aes(x=start_time, y=cloudcov_land))+
 ```{r}
 L7_records <- readRDS(paste0(Ldir, "L7_records.RDS"))
 L7_records <- L7_records[!is.na(L7_records$download_available),]
+L7_records <- L7_records[L7_records$level=="sr" | L7_records$level=="bt",] 
 
 ggplot(L7_records, aes(x=start_time, y=cloudcov_land))+
   geom_point()+theme_minimal()+
-  ggtitle(paste0("Landsat 8 data Jan 2011 to March 13, n=", nrow(L7_records)/3))
+  ggtitle(paste0("Landsat 8 data Jan 2011 to March 13, n=", nrow(L7_records)/2))
 
 # L7_records <- get_data(L7_records)
 
@@ -207,16 +224,14 @@ There is no Landsat 4/5 data available for that timeframe and AOI, I checked tha
 
 # divide up by level to sort into different folders
 L8sr <- L8_records[L8_records$level == "sr",]
-L8toa <- L8_records[L8_records$level == "toa",]
 L8bt <- L8_records[L8_records$level == "bt",]
 
-L8_rec_list <- list("sr"=L8sr, "toa"=L8toa,"bt"=L8bt)
+L8_rec_list <- list("sr"=L8sr, "bt"=L8bt)
 
 L7sr <- L7_records[L7_records$level == "sr",]
-L7toa <- L7_records[L7_records$level == "toa",]
 L7bt <- L7_records[L7_records$level == "bt",]
 
-L7_rec_list <- list("sr"=L7sr, "toa"=L7toa,"bt"=L7bt)
+L7_rec_list <- list("sr"=L7sr, "bt"=L7bt)
 
 # # make dirs to sort files into
 # dirstocreateL8 <- paste0(downloadpathL8, names(L8_rec_list), "/")
@@ -231,28 +246,35 @@ L7_rec_list <- list("sr"=L7sr, "toa"=L7toa,"bt"=L7bt)
 
 # download function 
 download_L <- function(downloadpath, recordslist){
-                lapply(seq(3), function(l){
+                lapply(seq(2), function(l){ # for bt and for sr
+                    print(paste0("starting with ", l, " (1= sr / 2=bt)"))
                     records <- recordslist[[l]]
                     dlp <- paste0(downloadpath, names(recordslist)[l], "/")
     
                       # for(i in seq(records$order_id)){
-                      for(i in c(1:10)){
+                      for(i in c(1:nrow(records))){
                       print(paste0("starting with ", i))
-                        earthexplorer_download(usgs_eros_username=USGSUser,
-                                             usgs_eros_password=USGSPW,
+                      print(c(records$summary[i]))
+                      if(records$ordered[i]==TRUE){
+                          earthexplorer_download(usgs_eros_username=newUSGSUser,
+                                             usgs_eros_password=newUSGSPW,
                                              output_folder = dlp, 
                                              verbose=T,
                                              ordernum = records$order_id[i],
                                              overwrite = T)
-                      print(paste0("downloaded ", i))
-
+                          print(paste0("downloaded ", i))
+                      } else {
+                        print("scene was not ordered")
+                      }
                       }
                 })
               }
 
 
-download_L(downloadpathL8, L8_rec_list)
-download_L(downloadpathL7, L7_rec_list)
+download_L(downloadpath=downloadpathL8, 
+           recordslist=L8_rec_list)
+download_L(downloadpath=downloadpathL7, 
+           recordslist=L7_rec_list)
 
 ```
 

@@ -9,15 +9,12 @@ match_pix_points <- function(sat_scene, sattype="sr",
   
   match_df_AWSS <- NULL
   match_df_iBut <- NULL
-  print(paste0("starting with ", i))
   
   orgnames_scc <- names(sat_scene)
+  ons <- str_split(orgnames_scc, "_")
   
   if(sattype=="sr"){
-    namsplit <- str_split(orgnames_scc, "_")
-    names(sat_scene) <- substring(names(sat_scene), 
-                                  nchar(names(sat_scene))-7,
-                                  nchar(names(sat_scene)))
+    names(sat_scene) <- unlist(lapply(ons, "[[", 9))
   } else if (sattype=="LST"){
     names(sat_scene) <- "LST"
   }
@@ -68,6 +65,9 @@ match_pix_points <- function(sat_scene, sattype="sr",
       match_df_AWSS <- merge.data.frame(scc_pl, matching, by.x="Site", 
                                         by.y="Site_Name")
       
+      match_df_AWSS$Lscene <- substring(orgnames_scc[1], 1,43)
+      
+      
     }
     
     if (nib > 0){ # if there are pixels over iButtons
@@ -77,6 +77,7 @@ match_pix_points <- function(sat_scene, sattype="sr",
       
       # subsetting iButton data by the sites that were available in the raster
       site <- iB_all[iB_all$Site_Name %in% scc_pl$Site,]
+      
       # intersecting the time intervals of Landsat and iButtons 
       scctiv <- rep(scc_pl$scc_tiv[1], length(site$iBut_tiv))
       secintersect <- as.period(intersect(site$iBut_tiv, scctiv), "sec")
@@ -89,6 +90,9 @@ match_pix_points <- function(sat_scene, sattype="sr",
       # match pixel data with the matching iButton data 
       match_df_iBut <- merge.data.frame(scc_pl, matching, by.x="Site", 
                                         by.y="Site_Name")
+      
+      match_df_iBut$Lscene <- substring(orgnames_scc[1], 1,43)
+      
     } 
   }
   

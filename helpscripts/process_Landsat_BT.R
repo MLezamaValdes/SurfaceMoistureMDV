@@ -1,5 +1,4 @@
 
-sc <- paste0(fd[1], "/")
 processLandsatBT <- function(sc){ # per BT scene that is unzipped already
 
   if(length(sc)!=0){

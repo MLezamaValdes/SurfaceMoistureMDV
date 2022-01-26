@@ -1,0 +1,149 @@
+---
+title: "Look into other predictors"
+author: "Maite"
+date: "24 1 2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=F, warning=F, echo=F, out.width = '150%')
+```
+
+```{r}
+library(raster)
+library(mapview)
+library(here)
+library(sf)
+```
+
+## read in predictor datasets
+
+* DEM 
+* rock outcrop
+* slope
+* soil type 
+## to do: 
+* once it is clear which dates are relevant: get wind speed and direction 
+* terrain-derived data 
+  * TWI
+  * regional microclimate (small depressions, polygon cracks etc)
+* distance to lakes and runoff channels
+* pH // EC: Pierre
+* permafrost data: Bockheim
+
+
+```{r, eval=F}
+# predpath <- here("../predictors/")
+# dem <- raster(paste0(predpath, "/DEM_8m_MDV_filled_aoi.tif"))
+# full_grids <- readRDS(paste0(predpath, "/full_size_grids_all_layers.RDS"))
+# rock_out <- full_grids$landcoverres
+# rock_out_8 <- resample(rock_out, dem)
+# writeRaster(rock_out_8, paste0(predpath, "/rock_outcrop_8m.grd"))
+# dem[rock_out_8 > 0.96] <- NA #0.97 = snow and ice, other values because of resampling
+# writeRaster(dem, paste0(predpath, "/DEM_8m_MDV_filled_aoi_no_snow.grd"), overwrite=T)
+# TWI <- raster(paste0(predpath, "/TWI_RSlope.tif"))
+# TWI_res <- resample(TWI, dem)
+# writeRaster(TWI_res, paste0(predpath, "TWI_resampled_dem.grd"))
+
+
+
+
+```
+
+Get logger point data 
+```{r}
+AWSS_loc <- read_sf(here("../calib_valid/AWS/SoilStations/SoilS.gpkg"))
+iBut_loc <- read_sf(here("../calib_valid/iButtons/gpkg_DDcorrection/iBut_dec.gpkg"))
+```
+
+
+Crop all predictors to rock outcrop settings
+
+```{r}
+predpath <- here("../predictors/")
+dem_full <- raster(paste0(predpath, "/DEM_8m_MDV_filled_aoi.tif"))
+dem_nosnow <- raster(paste0(predpath, "/DEM_8m_MDV_filled_aoi_no_snow.grd"))
+rock_out_8 <- raster(paste0(predpath, "/rock_outcrop_8m.grd"))
+full_grids <- readRDS(paste0(predpath, "/full_size_grids_all_layers.RDS"))
+slope <- full_grids$slope
+rock_out <- full_grids$landcoverres
+soil_type <- full_grids$soilraster
+
+slope[rock_out > 0.96] <- NA
+soil_type[rock_out > 0.96] <- NA
+
+TWI <- raster(paste0(predpath, "/TWI_resampled_dem.grd"))
+
+```
+
+## Lakes and streams 
+
+
+```{r, eval=F}
+# For streams using https://data.bas.ac.uk/items/6a4d6fa2-d713-45ab-a30a-7130795e29d2/ Version 7.3
+# Released: 2020-11-05T09:05:13 from the Antarctic Digital Database. 
+# 'Gerrish, L., Fretwell, P., & Cooper, P. (2020). Antarctic streams dataset (7.3) [Data set]. UK Polar Data Centre, Natural Environment Research Council, UK Research & Innovation. https://doi.org/10.5285/6a4d6fa2-d713-45ab-a30a-7130795e29d2' 
+# 
+# High resolution Antarctic lakes Version: 7.3, Released:2020-11-05T09:03:57
+# 'Gerrish, L., Fretwell, P., & Cooper, P. (2020). High resolution Antarctic lakes dataset (7.3) [Data set]. UK Polar Data Centre, Natural Environment Research Council, UK Research & Innovation. https://doi.org/10.5285/6a27ab9e-1258-49b1-bd2c-fcbed310ab45'.
+
+lakes <- read_sf(here("../predictors/lakes_streams/add_lakes_high_res_polygon_v7.3.gpkg"))
+streams <- read_sf(here("../predictors/lakes_streams/add_streams_v7.3.gpkg"))
+
+```
+
+Streams and lakes vectors from the Antarctic Digital Database (referenced in chunk above) don't really look that great... Got some Sentinel 2 scenes for detecting lakes and streams by myself: 
+
+```{r}
+lakes <- read_sf(here("../predictors/lakes.shp"))
+streams <- read_sf(here("../predictors/streams.shp"))
+
+iBut_loc_anta <- st_transform(iBut_loc, crs=crs(lakes))
+AWSS_loc_anta <- st_transform(AWSS_loc, crs=crs(lakes))
+
+iBalldist <-  st_distance(iBut_loc_anta, streams, by_element=F)
+AWalldist <- st_distance(AWSS_loc_anta, streams, by_element=F)
+
+# get minimum per row (feature in logger data)
+iBut_loc_anta$dist_stream <- apply(iBalldist,1,min)
+AWSS_loc_anta$dist_stream <- apply(AWalldist,1,min)
+
+
+iBalldist_l <-  st_distance(iBut_loc_anta, lakes, by_element=F)
+AWalldist_l <- st_distance(AWSS_loc_anta, lakes, by_element=F)
+
+iBut_loc_anta$dist_lake <- apply(iBalldist,1,min)
+AWSS_loc_anta$dist_lake <- apply(AWalldist,1,min)
+
+
+```
+
+
+```{r}
+mapview(dem_nosnow, na.color="#00000000")+
+  mapview(slope, na.color="#00000000")+
+  mapview(soil_type, na.color="#00000000")+
+  mapview(lakes, color="blue", col.regions="blue")+
+  mapview(streams, color="blue")+
+  mapview(AWSS_loc_anta, zcol="dist_stream")+
+  mapview(iBut_loc_anta, cex=4,
+          zcol="dist_stream")
+```
+
+## Characterize iButton locations by predictors
+```{r}
+
+terrainstack <- stack(dem_full, TWI)
+stack30 <- stack(full_grids$slope, full_grids$aspect, full_grids$soilraster)
+ 
+tsiB <- raster::extract(terrainstack, iBut_loc_anta)
+tsAW <- extract(terrainstack, AWSS_loc_anta)
+
+
+```
+
+## Characterize AWSS locations by predictors
+```{r}
+
+```
+

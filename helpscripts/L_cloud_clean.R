@@ -12,15 +12,11 @@ cloud <- c(cloud_shadow,cld,mc_cloud,hc_cloud,hc_cirrus)
 
 
 # valid range removes a lot of useful pixels 
-L_cloud_scale <- function(qualras, bands){
+L_cloud_scale <- function(qualras, bands, sn){
   c <- qualras 
   cs <- is.element(values(c),cloud)
   c[] <- cs
-  
-  writeRaster(c, 
-              paste0(fd[f], "/", names(qualras), "_mask.tif"),
-              overwrite=T)
-  
+
   # remove cloud pixels 
   bands[c==1] <- NA
   
@@ -37,9 +33,5 @@ L_cloud_scale <- function(qualras, bands){
   
   names(bands) <- sn[2:7]
   
-  writeRaster(bands, bylayer=T,
-              paste0(fd[f], "/",names(bands), "_cloud_rm_scaled.tif"),
-              overwrite=T)
-  
-  return(bands)
+  return(list(bands,c))
 }
